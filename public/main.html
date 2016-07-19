@@ -1,0 +1,102 @@
+<!DOCTYPE HTML>
+<html>
+
+<head>
+	<!-- Latest compiled and minified CSS -->
+	<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css" integrity="sha384-1q8mTJOASx8j1Au+a5WDVnPi2lkFfwwEAa8hDDdjZlpLegxhjVME1fgjWPGmkzs7" crossorigin="anonymous">
+
+	<!-- Optional theme -->
+	<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap-theme.min.css" integrity="sha384-fLW2N01lMqjakBkx3l/M9EahuwpSfeNvV63J5ezn3uZzapT0u7EYsXMjQV+0En5r" crossorigin="anonymous">
+
+	<<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.2.4/jquery.min.js"></script>
+	<script src="http://canvasjs.com/assets/script/canvasjs.min.js"></script>
+	
+	
+	<style>
+	/* centered columns styles */
+	.menu-row {
+		text-align:center;
+	}
+	.menu-col {
+		display:inline-block;
+		float:none;
+		/* reset the text-align */
+		text-align:left;
+		/* inline-block space fix */
+		margin-right:-4px;
+		
+		width:320px;
+	}
+	</style>
+	<script type="text/javascript">
+		
+	$(document).ready(function(){
+	
+		$.ajax({
+			type: "POST",
+			url: "http://localhost:3000/qwe",
+			contentType: 'application/json',
+		   //data: {format: 'json'},
+			success: function(data, status, xhr) {
+				alert(234);
+				alert(data);
+				var newButton = "<div class='row menu-row'>"
+				+	"<div class='menu-col'>"
+				+		"<button class='btn btn-primary   btn-lg btn-block' type='button' onclick='alert("+ '"' + "qwe" + '"' +")'>Click Me!</button>"
+				+	"</div>"
+				+"</div>";
+				
+				$("#signal-menu").append(newButton);
+			},
+			error: function(xhr, status, error) {
+				alert("Error! Server response: " + xhr.responseText);
+			}
+		});
+		
+	});
+		
+		
+		
+		
+	
+	
+	
+	
+	
+	</script>
+</head>
+<body>
+<div id="info"></div>
+	<div class=".text-center" style="text-align:center">
+		<h1>NeuroRing System Controller</h1>
+		<h2>Select Signal</h2>
+		
+		<div class="signal-menu" id="signal-menu">
+			<div class="row menu-row">
+				<div class="menu-col">
+					<button class="btn btn-primary   btn-lg btn-block" type="button" onclick="alert('Hello world!')">Click Me!</button>
+				</div>
+			</div>
+		</div>
+		
+	</div>
+	
+	<div class="row">
+			<div class="col-md-6">testing</div>
+			<div class="col-md-6">testing</div>
+		</div>
+		
+	
+	<div id="chartContainer" style="height: 300px; width:50%;">
+	</div>
+	
+	<div>
+		<a href="javascript:WSTest()">Run WebSocket</a>
+	</div>
+	   <div id="displaybox" class="chatDisplay"></div>
+	   
+	   
+	<!-- Latest compiled and minified JavaScript -->
+	<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/js/bootstrap.min.js" integrity="sha384-0mSbJDEHialfmuBBQP6A4Qrprq5OVfW37PRR3j5ELqxss1yVqOtnepnHVP9aJ7xS" crossorigin="anonymous"></script>
+</body>
+</html>

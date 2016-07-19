@@ -8,26 +8,83 @@ var bodyParser = require('body-parser');
 var routes = require('./routes/index');
 var users = require('./routes/users');
 
+//import the mongodb native drivers.
+var mongodb = require('mongodb');
+//work with "MongoClient" interface 
+var MongoClient = mongodb.MongoClient;
+
 var app = express();
 
+//open websocket
 var ws = require('ws').Server;
-var wss = new ws({port:(7222)});
+var wss = new ws({port:(7778)});
 var qwe = 0;
-var asd = 0;
+var intID = 0;
+
+// mongodb connection url
+var url = 'mongodb://192.168.99.100:27017/EMG';
+var mongodb;
+var collection;
+
+
+MongoClient.connect(url, function (err, db) {
+  if (err) {
+    console.log('Unable to connect to the mongodb. Error: ', err);
+  } else {
+	  
+    console.log('Connection established to', url);
+	
+	mongodb = db;
+	collection = db.collection('subjects');
+  }
+});
+
+
+//make sure mongodb closes
+process.on('SIGINT', function() {
+	mongodb.close();
+    process.exit(0);
+});
+
+
 wss.on('connection', function chat(ws){
+	
+	intID = setInterval(function(){
+		var num = 500 + Math.random() * 20;
+		wss.clients.forEach(function each(client) {
+			client.send(JSON.stringify({"name" : "EMG", "message": num}));
+		});
+		
+		collection.insert({output: 1, 'input': [500,100,233,444,555,666,7777,8888]}, function (err, result) {
+			if (err) {
+				console.log(err);
+			} else {
+				console.log('The documents inserted with "_id" are:', JSON.stringify(result));
+			}
+		});
+		
+	}, 1000);   
 	console.log('Client connected');
-	ws.send("hello");
+	
 	ws.on('message', function message(message){
 		console.log(message);
-		ws.send(qwe);
+		//console.log(wss.clients);
+		ws.send(JSON.stringify({"name" : "EMG", "message": qwe}));
 		
 	});
 	ws.on('close', function close() {
 		  	ws.close();
+			clearInterval(intID);
+			
 	});
+	
+	ws.send("hello");
 });
 
 
+
+/*
+//open serial port 
 var SerialPort = require("serialport").SerialPort;
 var serialport = new SerialPort("COM6");
 serialport.on('open', function(){
@@ -38,7 +95,7 @@ serialport.on('open', function(){
 				client.send(JSON.stringify({"name" : "EMG", "message": data[0]}));
 			  });
   });
-});
+});*/
 
 
 // view engine setup
@@ -55,6 +112,12 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 app.use('/', routes);
 app.use('/users', users);
+
+
+app.post('/qwe',function(req, res, next) {
+  res.send(JSON.stringify({"data":["James", "Kenny", "Fred"]}));
+});
+
 
 // catch 404 and forward to error handler
 app.use(function(req, res, next) {
@@ -86,6 +149,7 @@ app.use(function(err, req, res, next) {
     error: {}
   });
 });
+
 
 
 module.exports = app;
