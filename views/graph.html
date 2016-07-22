@@ -1,0 +1,362 @@
+<!DOCTYPE HTML>
+<html>
+
+<head>
+	<!-- Latest compiled and minified CSS -->
+	<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css" integrity="sha384-1q8mTJOASx8j1Au+a5WDVnPi2lkFfwwEAa8hDDdjZlpLegxhjVME1fgjWPGmkzs7" crossorigin="anonymous">
+
+	<!-- Optional theme -->
+	<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap-theme.min.css" integrity="sha384-fLW2N01lMqjakBkx3l/M9EahuwpSfeNvV63J5ezn3uZzapT0u7EYsXMjQV+0En5r" crossorigin="anonymous">
+
+	<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.2.4/jquery.min.js"></script>
+	<script src="http://canvasjs.com/assets/script/canvasjs.min.js"></script>
+	
+	
+	<style>
+
+	</style>
+	
+	
+	<script type="text/javascript">
+	
+	var wsPort = 7778;
+	var ws = null;
+	var maxChannelNumber = 0;
+	var defaultValue = 0;		//delete this if its not necessary
+	var debugLog = false;
+	
+	var plotStates = [];
+	var dataLength = 100; 		//number of points visible on chart
+	
+	
+	var plotWSRes = function (WSRes){
+	
+		var data = JSON.parse(WSRes.data);
+		var values = data.values;
+		
+		plotStates.forEach(function each(state, index){
+			var value = parseFloat(values[index]); //probably don't need this
+			updatePlot(state, value);
+		});
+
+		//debugging purposes
+		if (debugLog){
+			var messageBox = document.getElementById("messageBox");
+			messageBox.innerHTML += "<div>Channel Values: "+values.toString()+"\n"+"</div>";
+		}
+	};
+	
+	function initializePlot(){
+	
+		plotStates.forEach(function each(state, index){
+			for(i = 0; i < dataLength / 2;i++)
+				updatePlot(state, defaultValue);
+		});
+	};
+	
+	
+	function createPlotState(plotName){
+		//number of datapoints to be displayed
+		var plotState = {};
+		
+		plotState.dps = []; 			//data points value array
+		plotState.xVal = 0;		  		//the x value axis of the chart
+		
+		//create the chart to be displayed using canvasJS
+		plotState.chart = new CanvasJS.Chart(plotName,{
+			title :{
+				text: "Master Fred Having sex " + plotName
+			},			
+			data: [{
+				type: "line",
+				dataPoints: plotState.dps 
+			}]
+		});
+		
+		return plotState;
+	}
+	
+	//function called to update the chart
+	var updatePlot = function (plotState, yVal) {
+	
+		plotState.dps.push({
+			x: plotState.xVal,
+			y: yVal
+		});
+		plotState.xVal++;
+		
+		if (plotState.dps.length > dataLength)
+			plotState.dps.shift();
+		
+		plotState.chart.render();		
+	};
+	
+	//function called to connect to the websocket
+	function WSConnect(){
+	
+		//check if websocket is supported
+		if ("WebSocket" in window) {
+		
+
+			//create connection
+			ws = new WebSocket("ws://localhost:" + wsPort + "/");
+
+			//this function be deleted
+			ws.onopen = function(){
+				ws.send("Notice me senpai");
+			};
+			
+			ws.onmessage = null;
+
+			ws.onclose = function() { 
+				// websocket is closed.
+				alert("Connection is closed..."); 
+				
+			};
+		} else {
+		   alert("WebSocket NOT supported");
+		}
+	};
+	
+	
+	function cancel(){
+		$("#cancel").toggleClass('btn-default');
+	};
+	
+	function save(){
+		$("#save").toggleClass('btn-default');
+	};
+	
+	function add(){
+		$("#add").toggleClass('btn-default');
+	};
+	
+	function deleteCollection(){
+		$("#deleteC").toggleClass('btn-default');
+	};
+	
+
+	
+	
+	$(document).ready(function(){
+		$.ajax({
+			type: "POST",
+			url: "http://localhost:3000/getChannels",
+			contentType: 'application/json',
+		   //data: {format: 'json'},
+			success: function(data, status, xhr) {
+				var signalGroupName = JSON.parse(data).signalGroupName;
+				var channels = JSON.parse(data).channels;
+				
+				$("#signalGroupName").val(signalGroupName);
+				
+				channels.forEach( function(channel, index){
+					//alert(JSON.stringify(createPlotState("EMG" + channel)));
+					var state = createPlotState("CH-" + channel);
+					
+					plotStates.push(state);
+					updatePlot(state, defaultValue);
+					
+					maxChannelNumber++;
+				});
+				
+				WSConnect();
+			},
+			error: function(xhr, status, error) {
+				alert("Error getting max channel number! Server response: " + xhr.responseText);
+				window.location.href = "/";
+			}
+		});
+		
+		$( "#record" ).click(function() {
+			//check if the an action is already activated
+			if(false && isOtherActionActive("record")){
+				alert("Error! Please stop the other actions before performing this one");
+				return null;
+			}
+		
+			$("#record").toggleClass('btn-default');
+			
+			$.ajax({
+				type: "POST",
+				url: "http://localhost:3000/record",
+				contentType: 'application/json',
+			   //data: {format: 'json'},
+				success: function(data, status, xhr) {
+					if (ws.onmessage){
+						ws.onmessage = null;
+					} else {
+						ws.onmessage = plotWSRes;
+					}
+				},
+				
+				error: function(xhr, status, error) {
+					$("#record").toggleClass('btn-default');
+					alert("Error in recording! Server response: " + xhr.responseText); //error ___ is still active
+				}
+			});
+		});
+		
+		$( "#playback" ).click(function() {
+			//check if the an action is already activated
+			if(false && isOtherActionActive("playback")){
+				alert("Error! Please stop the other actions before performing this one");
+				return null;
+			}
+		
+			$("#playback").toggleClass('btn-default');
+			
+			$.ajax({
+				type: "POST",
+				url: "http://localhost:3000/playback",
+				contentType: 'application/json',
+			   //data: {format: 'json'},
+				success: function(data, status, xhr) {
+					if (ws.onmessage){
+						ws.onmessage = null;
+					} else {
+						//initializePlot();
+						ws.onmessage = plotWSRes;
+					}
+				},
+				
+				error: function(xhr, status, error) {
+					$("#playback").toggleClass('btn-default');
+					alert("Error in playback! Server response: " + xhr.responseText); //error ___ is still active
+				}
+			});
+		});
+		
+		$( "#save" ).click(function() {
+			//check if the an action is already activated
+			if(false && isOtherActionActive("save")){
+				alert("Error! Please stop the other actions before performing this one");
+				return null;
+			}
+		
+			$("#save").toggleClass('btn-default');
+			//alert($("#signalGroupName").val());
+			var signal2 = {signalGroupName: $("#signalGroupName").val()};
+			
+			$.ajax({
+				type: "POST",
+				url: "http://localhost:3000/save",
+				contentType: 'application/json',
+				data: JSON.stringify(signal2),
+				success: function(data, status, xhr) {
+					window.location.href = "/";
+				},
+				
+				error: function(xhr, status, error) {
+					$("#save").toggleClass('btn-default');
+					alert("Error in save! Server response: " + xhr.responseText); //error ___ is still active
+				}
+			});
+		});
+		
+		$( "#cancel" ).click(function() {
+			//check if the an action is already activated
+			if(false && isOtherActionActive("cancel")){
+				alert("Error! Please stop the other actions before performing this one");
+				return null;
+			}
+		
+			$("#cancel").toggleClass('btn-default');
+			
+			$.ajax({
+				type: "POST",
+				url: "http://localhost:3000/cancel",
+				contentType: 'application/json',
+				//data: JSON.stringify(signal2),
+				success: function(data, status, xhr) {
+					window.location.href = "/";
+				},
+				
+				error: function(xhr, status, error) {
+					$("#cancel").toggleClass('btn-default');
+					alert("Error in save! Server response: " + xhr.responseText); //error ___ is still active
+				}
+			});
+		});
+		
+		$( "#delete" ).click(function() {
+			//check if the an action is already activated
+			if(false && isOtherActionActive("delete")){
+				alert("Error! Please stop the other actions before performing this one");
+				return null;
+			}
+		
+			$("#delete").toggleClass('btn-default');
+			
+			$.ajax({
+				type: "POST",
+				url: "http://localhost:3000/delete",
+				contentType: 'application/json',
+				//data: JSON.stringify(signal2),
+				success: function(data, status, xhr) {
+					window.location.href = "/";
+				},
+				
+				error: function(xhr, status, error) {
+					$("#delete").toggleClass('btn-default');
+					alert("Error in save! Server response: " + xhr.responseText); //error ___ is still active
+				}
+			});
+		});
+	});
+	</script>
+	
+	<script type="text/javascript">
+
+	
+	
+	
+	
+	</script>
+</head>
+<body>
+
+		<div class="row">
+				<!-- this will be dynamic after add function -->
+				<div class="row">
+					<div class="col-md-6"><div id="CH-1" style="height: 300px;"></div></div> 
+				</div>
+				<div id="nameInput" class="col-md-6"  style="margin-top:2em;margin-bottom:2em;">
+				
+					<label for="nameOfSignal">Signal name:</label>
+					<input type="text" class="form-control" id="signalGroupName" placeholder="Please Enter a Name for This Signal">
+				</div>
+				
+				<div id="controlMenu" class="col-md-12"  style="margin-bottom:2em;">
+					
+					<button id="record" type="button" class="btn btn-default btn-lg col-md-1 controlButton" style="color: black;">Record</button>
+					<button id="playback" type="button" class="btn btn-default btn-lg col-md-1 controlButton">Playback</button>
+					<button id="result" type="button" class="btn btn-lg col-md-1 controlButton">Result</button>
+					<div class="col-md-1"></div>
+					<button id="cancel" type="button" onclick="cancel()" class="btn btn-default btn-lg col-md-1 controlButton">Cancel</button>
+					<button id="save" type="button" class="btn btn-default btn-lg col-md-1 controlButton">Save</button>
+					
+				</div>
+				
+				<div id="addMenu" class="col-md-12" style="margin-bottom:1em;">
+					<button id="add" type="button" class="btn btn-lg col-md-2 controlButton">Add Channel</button>
+				</div>
+				<!--<div id="messageBox" class="col-md-12" style="margin-bottom:3em;">Debug Log</div>-->
+				
+				<div id="deleteMenu" class="col-md-12" >
+					<button id="delete" type="button" class="btn btn-default btn-sm controlButton">Delete</button>
+				</div>
+		</div>
+		
+	
+	
+	
+	<div>
+		<a href="javascript:WSTest()">Run WebSocket</a>
+	</div>
+	
+	
+	<!-- Latest compiled and minified JavaScript -->
+	<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/js/bootstrap.min.js" integrity="sha384-0mSbJDEHialfmuBBQP6A4Qrprq5OVfW37PRR3j5ELqxss1yVqOtnepnHVP9aJ7xS" crossorigin="anonymous"></script>
+</body>
+</html>
