@@ -20,30 +20,35 @@ var MongoClient = mongodb.MongoClient;
 
 var app = express();
 
-//open websocket
-var ws = require('ws').Server;
-var SerialPort = require("serialport").SerialPort;
-var serialport = null;			 //used to create serial read session
-
 
 /*	***********************************************
 	Must edit this accordingly on different system
 	***********************************************
 */
 var displayRefreshPeriod = 10;	 //miliseconds the webpage graph will refresh
-var wss = new ws({port:(7778)}); //port number must be consistent with UI's javascript
+var dockerIP = "192.168.99.100"  //docker's local ip (windows version have different ip than host machine)
+var WSPort = 7778;				 //this must be consistant with the graph.html page
 var systemSerialPort = "COM6";   //check device manager
 
 
-var schedulerID = 0;
+//load websocket and serial port API
+var ws = require('ws').Server;
+var SerialPort = require("serialport").SerialPort;
+var serialport = null;			 //used to create serial read session
 
-// mongodb connection url
+//open websocket, this may take a while
+var wss = new ws({port:(WSPort)}); //port number must be consistent with UI's javascript
+
+
+// mongodb connection url, DB collections 
 var url = 'mongodb://192.168.99.100:27017/EMG';
 var mongodb;
 var collName;
 var collSignal;
 var collTmp;
 
+//server action states
+var schedulerID = 0;
 var signalGroupName = "";
 var signalGroupID;
 var actionState = ACTION_NONE;
