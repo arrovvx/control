@@ -74,6 +74,17 @@
 				$("#output").css('color', 'red');
 				$("#tick").css('color', 'red');
 			}
+		} else if (tick){
+			if (tick == 2) {
+				$("#tick").html("Flex");
+				$("#tick").css('color', 'red');
+			}else {
+				$("#tick").css('color', 'blue');
+				$("#tick").html("Release");	
+			}
+			$("#output").html("Thinking");	
+			$("#output").css('color', 'black');
+			
 		}
 	};
 	

@@ -28,7 +28,7 @@ var app = express();
 var displayRefreshPeriod = 10;	 //miliseconds the signal will be read
 var dockerIP = "192.168.99.100"  //docker's local ip (windows version have different ip than host machine)
 var WSPort = 7778;				 //websocket port, this must be consistant with the graph.html page
-var systemSerialPort = "COM3";   //check device manager
+var systemSerialPort = "COM6";   //check device manager
 
 
 //load websocket and serial port API
@@ -70,7 +70,7 @@ var tempData=[0,0];
 
 
 wssClient.on('open', function() {
-    wssClient.send('something');
+    //wssClient.send('something');
 });
 wssClient.on('message', function(message) {
 	tock = parseInt(message);
@@ -263,7 +263,7 @@ var recordEMG = function(){
 			client.send(JSON.stringify({"name" : "EMG", "values": channelVal}));
 			//wssClient.send(JSON.stringify({"output":tick,"input":channelVal}));
 		} else {
-			client.send(JSON.stringify({"name" : "EMG", "values": channelVal, "tick":tick, "output":tick}));////////
+			client.send(JSON.stringify({"name" : "EMG", "values": channelVal, "tick":tick}));////////
 			tick *= -1;
 		}
 	});
@@ -300,11 +300,64 @@ app.post('/record',function(req, res, next) {
 			console.log('Serial port opened');
 			serialport.on('data', function(data){
 			
+				
+				if(data.length!=0){
+					//data.forEach(function(index){
+						//buf.push(index);
+					//})
+					buf=data;
+					
+					for(i=0; i<buf.length;i++) {
+						if(conExtract){
+							//extracting the lower byte
+							
+							tempData[0]=(buf[i]);
+							if (addBit){
+								tempData[0]=(tempData[0]|128);
+							}
+							
+							value=(tempData[1]>>1)*512+(tempData[1]&1)*256+tempData[0];
+
+							channelVal[channel - 1] = value;
+							//arraySample.push([value,channel])
+							//reset all values
+							conExtract=false;
+							tempData=[];
+							addBit=false;
+							
+						}
+						else{
+							//extracting the upper byte
+							
+							firstBit=buf[i]>>7;
+							if(firstBit){
+								
+								if(buf[i]&1){
+									addBit=true;
+								}
+								else{
+									addBit=false;
+								}
+								channel=((buf[i]>>3)&15)+1;
+								tempData[1]=(buf[i]>>1)&3;
+								conExtract=true;
+							}
+							else{
+								tempData=[];
+								conExtract=false;
+								addBit=false;
+							}
+						}
+					}
+					buf=[];
+				}
 				//console.log(data[0]);
 				//
-				for(i = 0; i < maxChannelNum; i++)
-					channelVal[i] = data[0];
+				//for(i = 0; i < maxChannelNum; i++)
+					//channelVal[i] = data[0];
 				//console.log((data[0]>>> 0).toString(2));
+				//console.log(data[0]);
+				//
 			});
 		});
 		
@@ -342,18 +395,17 @@ app.post('/record',function(req, res, next) {
 var resultEMG = function(){
 	
 	//var num = 500 + Math.random() * 20;
-	wss.clients.forEach(function each(client) {
-		////////////// 2 = flex, 1 = release
-		if(tick < 0){
-			client.send(JSON.stringify({"name" : "EMG", "values": channelVal}));
-		} else {
-			client.send(JSON.stringify({"name" : "EMG", "values": channelVal, "tick":tick, "output":tock}));////////
-			tick *= -1;
-		}
-	});
-	
 	var absTick = tick;
 	if (absTick < 0) absTick *= -1;
+	wss.clients.forEach(function each(client) {
+		////////////// 2 = flex, 1 = release
+		if(tick > 0){
+			tick *= -1;
+		}
+		client.send(JSON.stringify({"name" : "EMG", "values": channelVal, "tick":absTick, "output":tock}));////////
+		
+	});
+	
 	wssClient.send(JSON.stringify({"output":absTick,"input":channelVal}));
 };
 
@@ -388,8 +440,12 @@ app.post('/result',function(req, res, next) {
 							}
 							
 							value=(tempData[1]>>1)*512+(tempData[1]&1)*256+tempData[0];
-
-							channelVal[channel - 1] = value;
+							
+							if (channel == 1)
+								channelVal[0] = value;
+							else if(channel == 2)
+								channelVal[1] = value;
+								
 							//arraySample.push([value,channel])
 							//reset all values
 							conExtract=false;
