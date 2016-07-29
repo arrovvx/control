@@ -25,9 +25,9 @@ var app = express();
 	Must edit this accordingly on different system
 	***********************************************
 */
-var displayRefreshPeriod = 10;	 //miliseconds the webpage graph will refresh
+var displayRefreshPeriod = 1;	 //miliseconds the webpage graph will refresh
 var dockerIP = "192.168.99.100"  //docker's local ip (windows version have different ip than host machine)
-var WSPort = 7778;				 //this must be consistant with the graph.html page
+var WSPort = 7778;				 //websocket port, this must be consistant with the graph.html page
 var systemSerialPort = "COM6";   //check device manager
 
 
@@ -40,8 +40,8 @@ var serialport = null;			 //used to create serial read session
 var wss = new ws({port:(WSPort)}); //port number must be consistent with UI's javascript
 
 
-// mongodb connection url, DB collections 
-var url = 'mongodb://192.168.99.100:27017/EMG';
+// mongodb connection mongodbURL, DB collections 
+var mongodbURL = 'mongodb://192.168.99.100:27017/EMG';
 var mongodb;
 var collName;
 var collSignal;
@@ -52,15 +52,21 @@ var schedulerID = 0;
 var signalGroupName = "";
 var signalGroupID;
 var actionState = ACTION_NONE;
+var channelVal = [];
+var maxChannelNum = 2;
+
+/////special
+var tick = 1;
+var tickID = 0;
 
 
 
-MongoClient.connect(url, function (err, db) {
+MongoClient.connect(mongodbURL, function (err, db) {
   if (err) {
     console.log('Unable to connect to the mongodb. Error: ', err);
   } else {
 	  
-    console.log('Connection established to', url);
+    console.log('Connection established to', mongodbURL);
 	
 	mongodb = db;
 	collName = db.collection('signalGroups');	//unique signal id
@@ -72,8 +78,20 @@ MongoClient.connect(url, function (err, db) {
 
 //make sure mongodb closes
 process.on('SIGINT', function() {
-	mongodb.close();
-    process.exit(0);
+	
+	//same as cancel
+	collName.find({ signalGroupID: signalGroupID }, {signalGroupName:1}).toArray(function(err, docs) {
+		console.log(docs.toString());
+		if(docs[0]) {
+			if (docs[0].signalGroupName == ""){
+				collName.remove( { signalGroupName: signalGroupName }, true );
+			}
+		}
+	
+		endSession();
+		mongodb.close();
+		process.exit(0);
+	});
 });
 
 
@@ -90,8 +108,15 @@ wss.on('connection', function chat(ws){
 	ws.on('close', function close() {
 		
 		actionState = ACTION_NONE;
+		channelVal = [];
 		clearInterval(schedulerID);
+		
+		clearInterval(tickID);/////////////
+		
+		endSession();
 		ws.close();	
+		
+		
 	});
 	
 	ws.send("hello");
@@ -149,7 +174,7 @@ app.post('/graph', function(req, res) {
 	
 	//load mongoDB status
 	
-	collName.find({signalGroupID:signalGroupID},{signalGroupID:1,signalGroupName:1}).toArray(function(err, docs) {
+	collName.find({signalGroupID:signalGroupID},{signalGroupID:1,signalGroupName:1,channelNum:1}).toArray(function(err, docs) {
 		  
 		console.log(JSON.stringify(docs));
 		
@@ -159,6 +184,8 @@ app.post('/graph', function(req, res) {
 			signalGroupID = docs[0].signalGroupID;
 			signalGroupName = docs[0].signalGroupName;
 			actionState = ACTION_NONE;
+			for(i = 0; i < docs[0].channelNum; i++)	
+				channelVal.push(0);
 			
 			res.render('graph.html');
 		} else {
@@ -174,8 +201,9 @@ app.post('/newGraph', function(req, res) {
 	signalGroupID = Date.now();
 	signalGroupName = "";
 	actionState = ACTION_NONE;
+	channelVal.push(0);
 	
-	collName.insert({'signalGroupName': signalGroupName, 'signalGroupID': signalGroupID}, function (err, result) {
+	collName.insert({'signalGroupName': signalGroupName, 'signalGroupID': signalGroupID, 'channelNum':1}, function (err, result) {
 		if (err) {
 			console.log(err);
 		} else {	
@@ -191,18 +219,35 @@ app.post('/newGraph', function(req, res) {
 
 //graph view
 app.post('/getChannels',function(req, res, next) {
-	res.send(JSON.stringify({"channels": [1], "signalGroupName": signalGroupName}));
+	res.send(JSON.stringify({"channels": channelVal, "signalGroupName": signalGroupName}));
   //res.status(500).send('Something broke!');
 });
 
 
 
-var EMGValue= null;
+
+
+function endSession() {
+	
+	collTmp.drop();
+	signalGroupID = null;
+	signalGroupName = "";
+	actionState = ACTION_NONE;
+	channelVal = [];
+	
+};
+
 var recordEMG = function(){
 	
 	//var num = 500 + Math.random() * 20;
 	wss.clients.forEach(function each(client) {
-		client.send(JSON.stringify({"name" : "EMG", "values": [EMGValue]}));
+		////////////// 2 = flex, 1 = release
+		if(tick < 0){
+			client.send(JSON.stringify({"name" : "EMG", "values": channelVal}));
+		} else {
+			client.send(JSON.stringify({"name" : "EMG", "values": channelVal, "tick":tick, "output":tick}));////////
+			tick *= -1;
+		}
 	});
 	
 	uploadEMGToDB();
@@ -211,8 +256,11 @@ var recordEMG = function(){
 };
 
 function uploadEMGToDB(){
-	
-	collTmp.insert({output: 1, 'input': [EMGValue], 'timeStamp': Date.now(), 'signalGroupID': signalGroupID}, function (err, result) {
+	//console.log(signalGroupID);
+	////////////////////
+	var absTick = tick;
+	if (absTick < 0) absTick *= -1;
+	collTmp.insert({output: absTick, 'input': channelVal, 'timeStamp': Date.now(), 'signalGroupID': signalGroupID}, function (err, result) {
 		if (err) {
 			console.log(err);
 		} else {
@@ -221,28 +269,45 @@ function uploadEMGToDB(){
 	});
 };
 
+var readArduino = function(data){
+	
+}
+
 //graph view
 app.post('/record',function(req, res, next) {
 	
 	if (actionState == ACTION_NONE){
 		
+		//decode signal from arduino master fred sex
 		serialport = new SerialPort(systemSerialPort);
 		serialport.on('open', function(){
 			console.log('Serial port opened');
 			serialport.on('data', function(data){
 			
 				//console.log(data[0]);
-				EMGValue = data[0];
+				//
+				for(i = 0; i < maxChannelNum; i++)
+					channelVal[i] = data[0];
+				//console.log((data[0]>>> 0).toString(2));
 			});
 		});
 		
 			
 		schedulerID = setInterval( recordEMG, displayRefreshPeriod); 
+		///////////////////
+		tickID = setInterval( function(){
+			if(tick == -1){
+				tick = 2;
+			} else if (tick == -2){
+				tick = 1;
+			}
+		}, 1000); ///////////////////
 		
 		actionState = ACTION_RECORD;
 	} else if(actionState == ACTION_RECORD){
 		
 		clearInterval(schedulerID);
+		clearInterval(tickID);///////////
 		serialport.close(function (err) {
 			console.log('port closed, Error: ', null != err);
 		});
@@ -270,7 +335,7 @@ function playbackEMG(){
 			
 			//var num = 500 + Math.random() * 20;
 			wss.clients.forEach(function each(client) {
-				client.send(JSON.stringify({"name" : "EMG", "values": docs[0].input}));
+				client.send(JSON.stringify({"name" : "EMG", "values": docs[0].input, "tick":docs[0].output}));////////
 			});
 		} else {
 			collTmp.find({timeStamp:{$gt: tmpNum}}).limit(1).toArray(function(err2, docs2) {
@@ -280,8 +345,9 @@ function playbackEMG(){
 				if(docs2[0]){
 					tmpNum = docs2[0].timeStamp;
 					
+					///////special scenario	
 					wss.clients.forEach(function each(client) {
-						client.send(JSON.stringify({"name" : "EMG", "values": docs2[0].input}));
+						client.send(JSON.stringify({"name" : "EMG", "values": docs2[0].input, "tick":docs2[0].output}));////////
 					});
 				} else {
 					tmpNum = 0;
@@ -300,22 +366,32 @@ app.post('/playback',function(req, res, next) {
 	if (actionState == ACTION_NONE){
 			
 		schedulerID = setInterval( playbackEMG, displayRefreshPeriod); 
+		///////////////////
+		tickID = setInterval( function(){
+			if(tick == -1){
+				tick = 2;
+			} else if (tick == -2){
+				tick = 1;
+			}
+		}, 1000); ///////////////////
 		
 		actionState = ACTION_PLAYBACK;
+		res.send(JSON.stringify({"channels": [1]}));
 	} else if(actionState == ACTION_PLAYBACK){
 		
 		clearInterval(schedulerID);
+		clearInterval(tickID);///////////
 		actionState = ACTION_NONE;
+		res.send(JSON.stringify({"channels": [1]}));
 	} else {
 		res.status(500).send('Server resource claimed by another action');
 	}
 	
-	res.send(JSON.stringify({"channels": [1]}));
 });
 
 //graph view
 app.post('/save',function(req, res, next) {
-	console.log(req.body.signalGroupName);
+	//console.log(req.body.signalGroupName);
 	var newSignalGroupName = req.body.signalGroupName;
 	
 	if (actionState == ACTION_NONE){
@@ -326,23 +402,28 @@ app.post('/save',function(req, res, next) {
 			//move signal values from tmp to official
 			collTmp.find({ signalGroupID: signalGroupID }).toArray(function(err, docs) {
 				  //console.log(signalGroupID);
-				console.log(docs.length);
+				//console.log(docs.length);
 				
-				console.log(docs[0]);
-				if(docs.length > 0) {
+				//console.log(docs[0]);
+				if(docs && docs.length > 0) {
 					docs.forEach(function each(signal, index){
 						collSignal.insert(signal, function (err, result) {
 							if (err) {
 								console.log(err);
 							} else {
-								//console.log('The documents inserted with "_id" are2222:', JSON.stringify(result));
+								//console.log('The documents inserted:', JSON.stringify(result));
 							}
 						});
 					});
+				} else {
+					//console.log(docs);
+					//console.log("signalGroupID: " + signalGroupID);
+					console.log(err);
 				}
+				collTmp.drop();
+				res.send(JSON.stringify({"channels": [1]}));
+				
 			});
-			collTmp.drop();
-			res.send(JSON.stringify({"channels": [1]}));
 		} else {
 			res.status(500).send('Signal name cannot be empty');
 		}
@@ -362,17 +443,42 @@ app.post('/cancel',function(req, res, next) {
 				if (docs[0].signalGroupName == ""){
 					collName.remove( { signalGroupName: signalGroupName }, true );
 				}
+				
+				endSession();
+				res.send(JSON.stringify({"channels": [1]}));
+			} else {
+				endSession();
+				res.status(500).send('Signal group entry does not exist');
+			}
+		});
+		
+	} else {
+		res.status(500).send('Server resource claimed by another action');
+	}
+	
+});
+
+//graph view
+app.post('/add',function(req, res, next) {
+	//console.log(req.body.signalGroupNum);
+	//console.log("qwe " + signalGroupID);
+	if (actionState == ACTION_NONE){
+		collName.find({ signalGroupID: signalGroupID }, {channelNum:1}).toArray(function(err, docs) {
+			
+			//console.log(JSON.stringify(docs[0]));
+			if(docs[0]) {
+				if (docs[0].channelNum < maxChannelNum){
+					collName.update({ signalGroupID: signalGroupID },{"$set": { "channelNum": docs[0].channelNum + 1}},{ upsert: true });
+					channelVal.push(0);
+					res.send(JSON.stringify({"channels": [1]}));
+					
+				} else {
+					res.status(500).send('Max number of channels reached');
+				}
 			} else {
 				res.status(500).send('Signal group entry does not exist');
 			}
 		});
-			
-		collTmp.drop();
-		signalGroupID = null;
-		signalGroupName = "";
-		actionState = ACTION_NONE;
-		res.send(JSON.stringify({"channels": [1]}));
-		
 	} else {
 		res.status(500).send('Server resource claimed by another action');
 	}
@@ -384,12 +490,11 @@ app.post('/delete',function(req, res, next) {
 	
 	if (actionState == ACTION_NONE){
 		
+		
 		collSignal.remove( { signalGroupID: signalGroupID }, false );
 		collName.remove( { signalGroupName: signalGroupName }, true );
-		collTmp.drop();
-		signalGroupID = null;
-		signalGroupName = "";
-		actionState = ACTION_NONE;
+		
+		endSession();
 		res.send(JSON.stringify({"channels": [1]}));
 		
 	} else {

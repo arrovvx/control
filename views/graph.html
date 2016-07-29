@@ -27,7 +27,10 @@
 	var debugLog = false;
 	
 	var plotStates = [];
-	var dataLength = 100; 		//number of points visible on chart
+	var dataLength = 5000; 		//number of points visible on chart
+	
+	var channelNum = 0;
+	var renderPeriod = 30;
 	
 	
 	var plotWSRes = function (WSRes){
@@ -45,6 +48,39 @@
 			var messageBox = document.getElementById("messageBox");
 			messageBox.innerHTML += "<div>Channel Values: "+values.toString()+"\n"+"</div>";
 		}
+		
+		///////////
+		var tick = data.tick;
+		var output = data.output;
+		if(tick && output){
+			if(output == tick){
+				if (output == 2){
+					$("#tick").html("Flex");	
+					$("#output").html("Flexing");	
+				} else {
+					$("#tick").html("Release");	
+					$("#output").html("Releasing");	
+				}
+				$("#output").css('color', 'green');
+				$("#tick").css('color', 'green');
+			} else {
+				if (output == 2){
+					$("#tick").html("Release");	
+					$("#output").html("Flexing");	
+				} else {
+					$("#tick").html("Flex");	
+					$("#output").html("Releasing");	
+				}
+				$("#output").css('color', 'red');
+				$("#tick").css('color', 'red');
+			}
+		}
+	};
+	
+	var renderPlots = function(){
+		plotStates.forEach(function each(state, index){
+			state.chart.render();
+		});
 	};
 	
 	function initializePlot(){
@@ -52,6 +88,7 @@
 		plotStates.forEach(function each(state, index){
 			for(i = 0; i < dataLength / 2;i++)
 				updatePlot(state, defaultValue);
+			state.chart.render();
 		});
 	};
 	
@@ -66,12 +103,13 @@
 		//create the chart to be displayed using canvasJS
 		plotState.chart = new CanvasJS.Chart(plotName,{
 			title :{
-				text: "Master Fred Having sex " + plotName
+				text: plotName
 			},			
 			data: [{
 				type: "line",
 				dataPoints: plotState.dps 
-			}]
+			}],
+			zoomEnabled:true
 		});
 		
 		return plotState;
@@ -89,7 +127,6 @@
 		if (plotState.dps.length > dataLength)
 			plotState.dps.shift();
 		
-		plotState.chart.render();		
 	};
 	
 	//function called to connect to the websocket
@@ -118,28 +155,10 @@
 		   alert("WebSocket NOT supported");
 		}
 	};
-	
-	
-	function cancel(){
-		$("#cancel").toggleClass('btn-default');
-	};
-	
-	function save(){
-		$("#save").toggleClass('btn-default');
-	};
-	
-	function add(){
-		$("#add").toggleClass('btn-default');
-	};
-	
-	function deleteCollection(){
-		$("#deleteC").toggleClass('btn-default');
-	};
-	
 
-	
-	
+
 	$(document).ready(function(){
+		channelNum = 0;
 		$.ajax({
 			type: "POST",
 			url: "http://localhost:3000/getChannels",
@@ -150,14 +169,21 @@
 				var channels = JSON.parse(data).channels;
 				
 				$("#signalGroupName").val(signalGroupName);
+				channels.forEach( function(channel, index){
+				});
 				
 				channels.forEach( function(channel, index){
 					//alert(JSON.stringify(createPlotState("EMG" + channel)));
-					var state = createPlotState("CH-" + channel);
+				
+					$("#graphTable").append('<div class="col-md-6"><div id="' + "CH-" + channelNum + '" style="height: 300px;"></div></div>');	
+					
+					var state = createPlotState("CH-" + channelNum);
 					
 					plotStates.push(state);
 					updatePlot(state, defaultValue);
+					state.chart.render();
 					
+					channelNum++;
 					maxChannelNumber++;
 				});
 				
@@ -186,8 +212,10 @@
 				success: function(data, status, xhr) {
 					if (ws.onmessage){
 						ws.onmessage = null;
+						clearInterval(schedulerID);
 					} else {
 						ws.onmessage = plotWSRes;
+						schedulerID = setInterval( renderPlots, renderPeriod); 
 					}
 				},
 				
@@ -215,9 +243,11 @@
 				success: function(data, status, xhr) {
 					if (ws.onmessage){
 						ws.onmessage = null;
+						clearInterval(schedulerID);
 					} else {
 						//initializePlot();
 						ws.onmessage = plotWSRes;
+						schedulerID = setInterval( renderPlots, renderPeriod); 
 					}
 				},
 				
@@ -275,7 +305,7 @@
 				
 				error: function(xhr, status, error) {
 					$("#cancel").toggleClass('btn-default');
-					alert("Error in save! Server response: " + xhr.responseText); //error ___ is still active
+					alert("Error in cancel! Server response: " + xhr.responseText); //error ___ is still active
 				}
 			});
 		});
@@ -304,6 +334,44 @@
 				}
 			});
 		});
+		
+		$( "#add" ).click(function() {
+			//check if the an action is already activated
+			if(false && isOtherActionActive("add")){
+				alert("Error! Please stop the other actions before performing this one");
+				return null;
+			}
+		
+			$("#add").toggleClass('btn-default');
+
+			
+			$.ajax({
+				type: "POST",
+				url: "http://localhost:3000/add",
+				contentType: 'application/json',
+				//data: JSON.stringify(signal2),
+				success: function(data, status, xhr) {
+					//alert(channelNum);
+					$("#graphTable").append('<div class="col-md-6"><div id="' + "CH-" + channelNum + '" style="height: 300px;"></div></div>');
+					
+					var newState = createPlotState("CH-" + channelNum);
+							
+					plotStates.push(newState);
+					updatePlot(newState, defaultValue);
+					plotStates[0].chart.render();
+					newState.chart.render();
+					channelNum++;
+					
+					//alert("qwe333" + plotStates.toString());
+					$("#add").toggleClass('btn-default');
+				},
+				
+				error: function(xhr, status, error) {
+					$("#add").toggleClass('btn-default');
+					alert("Error in save! Server response: " + xhr.responseText); //error ___ is still active
+				}
+			});
+		});
 	});
 	</script>
 	
@@ -317,11 +385,17 @@
 </head>
 <body>
 
-		<div class="row">
+		<div id="mainTable" class="row" style="margin-left:5px;">
 				<!-- this will be dynamic after add function -->
-				<div class="row">
-					<div class="col-md-6"><div id="CH-1" style="height: 300px;"></div></div> 
+				<div id="graphTable" class="row">
 				</div>
+				
+				<!-- tick toc special -->
+				<div style="border-radius: 25px;height:100px;" class="col-md-12"  id="outputBox">
+					<div id="tick" style="float:left; height: 100px;width:250px;font-size: 50px;text-align:center;border-radius: 25px;border: 2px solid #000000;"></div>
+					<div id="output" style=" margin-left: 20px;float:left; height: 100px;width:250px;font-size: 50px;text-align:center;border-radius: 25px;border: 2px solid #000000;"></div>
+				</div>
+				
 				<div id="nameInput" class="col-md-6"  style="margin-top:2em;margin-bottom:2em;">
 				
 					<label for="nameOfSignal">Signal name:</label>
@@ -340,7 +414,7 @@
 				</div>
 				
 				<div id="addMenu" class="col-md-12" style="margin-bottom:1em;">
-					<button id="add" type="button" class="btn btn-lg col-md-2 controlButton">Add Channel</button>
+					<button id="add" type="button" class="btn btn-default btn-lg col-md-2 controlButton">Add Channel</button>
 				</div>
 				<!--<div id="messageBox" class="col-md-12" style="margin-bottom:3em;">Debug Log</div>-->
 				
@@ -351,10 +425,6 @@
 		
 	
 	
-	
-	<div>
-		<a href="javascript:WSTest()">Run WebSocket</a>
-	</div>
 	
 	
 	<!-- Latest compiled and minified JavaScript -->
