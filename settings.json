@@ -1,0 +1,21 @@
+{
+	"_comment": "Please edit this accordingly on different systems",
+	
+	"UIDataTransferPeriod": 2,
+	"maxChannelNumber": 2,
+	
+	"controllerHTTPPort": 9080,
+	"UIWebsocketPort": 8888,
+	"SamplerWebsocketPort": 8889,
+	
+	"TLCIP": "dockerhost",
+	"TLCWebsocketPort": 8890,
+	
+	"databaseIP": "dockerhost",
+	"databasePort": 27017,
+	"databaseName": "EMG",
+	"mongoRetryPeriod" : 1000,
+	
+	
+	"loggerLevel": "ERROR"
+}
