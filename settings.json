@@ -1,17 +1,17 @@
 {
-	"_comment": "Please edit this accordingly on different systems",
+	"_comment": "Please edit this accordingly on different systems 192.168.99.101 dockerhost",
 	
 	"UIDataTransferPeriod": 2,
-	"maxChannelNumber": 2,
+	"maxChannelNumber": 8,
 	
 	"controllerHTTPPort": 9080,
 	"UIWebsocketPort": 8888,
 	"SamplerWebsocketPort": 8889,
 	
-	"TLCIP": "dockerhost",
+	"TLCIP": "192.168.99.101",
 	"TLCWebsocketPort": 8890,
 	
-	"databaseIP": "dockerhost",
+	"databaseIP": "192.168.99.101",
 	"databasePort": 27017,
 	"databaseName": "EMG",
 	"mongoRetryPeriod" : 1000,

@@ -48,7 +48,7 @@ module.exports = function (settings, dataaccess){
 		console.log('Sampler client connected');
 		
 		wsSample.on('message', function message(message){
-			console.log("Message from sampler: " + message);
+			//console.log("Message from sampler: " + message);
 			
 			var data = JSON.parse(message);
 			
@@ -79,8 +79,7 @@ module.exports = function (settings, dataaccess){
 					console.log("Error inserting to database. Database not online");
 					
 				}
-			}
-			
+			} 
 		});
 		
 		wsSample.on('close', function close() {
@@ -329,6 +328,7 @@ module.exports = function (settings, dataaccess){
 					if(err){
 						res.status(500).send("Cannot update channel number. Error: " + err);
 					} else {
+						sas.channelVal.push(0);
 						res.send(JSON.stringify({"result": "channel number update success"}));
 					}
 					

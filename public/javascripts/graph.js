@@ -376,7 +376,7 @@ $(document).ready(function(){
 				return null;
 			}
 		
-			$("#add").toggleClass('btn-default');
+			//$("#add").toggleClass('btn-default');
 
 			
 			$.ajax({
@@ -394,9 +394,9 @@ $(document).ready(function(){
 					updatePlot(newState, defaultValue);
 					plotStates[0].chart.render();
 					newState.chart.render();
-					
+					isOtherActionActive("add");
 					//alert("qwe333" + plotStates.toString());
-					$("#add").toggleClass('btn-default');
+					//$("#add").toggleClass('btn-default');
 				},
 				
 				error: function(xhr, status, error) {
