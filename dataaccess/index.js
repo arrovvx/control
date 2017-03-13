@@ -152,7 +152,9 @@ module.exports = function (settings){
 				});
 				
 				//drop tmp collection, data is in docs variable
-				mongoConn.collection.tmp.drop();
+				mongoConn.collection.tmp.drop(function(error){
+					console.log("Error while dropping cached signal: " + error);
+				});
 			} else {
 				console.log("Cannot find any tmp signals");
 				callback(null);
@@ -164,7 +166,10 @@ module.exports = function (settings){
 	module.clearTmpData = function(){
 		
 		mongoConn.collection.name.remove( { signalGroupName: "" }, true );	//saved signalGroup must have name
-		mongoConn.collection.tmp.drop();
+		mongoConn.collection.tmp.drop(function(error){
+			//strange ns not found error pops up if tmp is empty
+			//console.log("Error while dropping cached signal: " + error);
+		});
 	};
 	
 	module.deleteSignalGroup = function(signalGroupInfo){

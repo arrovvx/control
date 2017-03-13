@@ -5,13 +5,15 @@
 	"maxChannelNumber": 8,
 	
 	"controllerHTTPPort": 9080,
-	"UIWebsocketPort": 8888,
+	"UIWebsocketPort": 9081,
 	"SamplerWebsocketPort": 8889,
 	
-	"TLCIP": "192.168.99.101",
+	"TLCIP": "127.0.0.1",
 	"TLCWebsocketPort": 8890,
+	"TLCStateChangePeriod": 1000,
+	"TLCStateNum": 4,
 	
-	"databaseIP": "192.168.99.101",
+	"databaseIP": "192.168.99.100",
 	"databasePort": 27017,
 	"databaseName": "EMG",
 	"mongoRetryPeriod" : 1000,

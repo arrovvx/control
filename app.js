@@ -46,6 +46,13 @@ router.post('/cancel', routes.cancel);
 router.post('/add', routes.add);
 router.post('/delete', routes.deleteSignalGroup);
 
+router.get('/realTest', routes.realTest);
+
+router.get('/diagnostic', routes.diagnostic);
+router.post('/serviceStatus', routes.serviceStatus);
+router.post('/initPerformanceTest', routes.initPerformanceTest);
+router.post('/performanceTest', routes.performanceTest);
+
 
 app.use('/', router);
 

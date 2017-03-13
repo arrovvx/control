@@ -5,7 +5,13 @@ var debug = require('debug')('UI');
 var ACTION_NONE = 0,
 	ACTION_RECORD = 1,
 	ACTION_PLAYBACK = 2,
-	ACTION_TEST = 3;
+	ACTION_TEST = 3,
+	ACTION_PERFORMANCE = 4;
+
+var PERFORMANCE_NONE = 0,
+	PERFORMANCE_UI = 1,
+	PERFORMANCE_DATABASE = 2,
+	PERFORMANCE_TLC = 3;
 
 module.exports = function (settings, dataaccess){
 	
@@ -13,7 +19,7 @@ module.exports = function (settings, dataaccess){
 	var WSConn = {
 		UI: new ws({port:(settings.UIWebsocketPort)}),
 		sampler: new ws({port:(settings.SamplerWebsocketPort)}),
-		TLC: null//new wsClient('ws://' + settings.TLCIP + ':' + settings.TLCWebsocketPort + '/')
+		TLC: null //new wsClient('ws://' + settings.TLCIP + ':' + settings.TLCWebsocketPort + '/')
 	};
 	
 	//define server action states (sas)
@@ -22,69 +28,57 @@ module.exports = function (settings, dataaccess){
 		signalGroupName: "",
 		signalGroupID: null,
 		actionState: ACTION_NONE,
+		performanceState:PERFORMANCE_NONE,
+		UIClients: {},
+		sysClientID: 1, //make this more secure
 		channelVal: [],
 		maxChannelNum: settings.maxChannelNumber,
 		tmpTimestamp: 0,
-		samplerActionFunction: null
+		samplerActionFunction: null,
+		TLCStateChangeID: 0,
+		TLCActionState: -1,
+		
 	};
 	
 	WSConn.UI.on('connection', function chat(ws){
 		console.log('UI client connected');
 		
-		ws.on('message', function message(message){
-			//console.log(message);
-			ws.send(JSON.stringify({"name" : settings.databaseName, "message": "Black Asshole"}));
+		//close connection if there is already a client
+		if(sas.UIClients[sas.sysClientID]){
+			ws.close();
 			
-		});
-		ws.on('close', function close() {
-			dataaccess.clearTmpData();
-			clearSAS();
+		} else {
 			
-			console.log('Client connection closed');
-		});
+			var clientID = null;		
+			clientID = sas.sysClientID;
+			sas.UIClients[sas.sysClientID] = ws;	
+			sas.UIClients[sas.sysClientID].send(JSON.stringify({"ID": sas.sysClientID}));	
+		
+			ws.on('message', function message(message){
+				
+				console.log("Client message: " + message);
+			});
+			
+			ws.on('close', function close() {
+				
+				delete sas.UIClients[clientID];
+				dataaccess.clearTmpData();
+				clearSAS();
+				
+				console.log('Client connection closed');
+			});
+		}
+		
 	});
 	
 	WSConn.sampler.on('connection', function chat(wsSample){
 		console.log('Sampler client connected');
 		
-		wsSample.on('message', function message(message){
-			//console.log("Message from sampler: " + message);
-			
-			var data = JSON.parse(message);
-			
-			if(sas.actionState == ACTION_RECORD || sas.actionState == ACTION_TEST){
-				if ( data.input && data.input.length == sas.channelVal.length ){ 
-					sas.samplerActionFunction(data);
-					
-				} else {
-					console.log("Error, data fields not properly defined");
-				}
-				
-			} else if(data.command == "store"){
-				if(dataaccess.isDBOnline()){
-					if ( (data.input && data.input.length <= sas.maxChannelNum) && data.output && data.signalGroupID){
-					
-						//require signal ID
-						signalInfo = {'signalGroupID': data.signalGroupID};
-						
-						dataaccess.insertNewSignalDirectly(signalInfo, data.output, data.input, function(err){
-							if(err){
-								ws.send(JSON.stringify({"status" : "Error"}));
-							}
-						});
-					} else {
-						console.log("Error, data fields not properly defined");
-					}
-				} else {
-					console.log("Error inserting to database. Database not online");
-					
-				}
-			} 
-		});
+		wsSample.on('message', samplerDefaultHandler);
 		
 		wsSample.on('close', function close() {
 			
-			if (sas.actionState == ACTION_RECORD || sas.actionState == ACTION_TEST){
+			if (sas.actionState == ACTION_RECORD || sas.actionState == ACTION_TEST || sas.actionState == ACTION_PERFORMANCE){
 				sas.actionState = ACTION_NONE;
 				sas.samplerActionFunction = null;
 				stopUIAction();
@@ -92,7 +86,6 @@ module.exports = function (settings, dataaccess){
 			}
 			
 			console.log("connection to sampler closed");
-			wsSample.close();
 		});
 		
 	});
@@ -121,7 +114,10 @@ module.exports = function (settings, dataaccess){
 		console.log("signalgroupid in /graph " + req.body.ID);
 		signalGroupID = parseInt(req.body.ID);
 		
-		if (dataaccess.isDBOnline()){
+		if (sas.UIClients[sas.sysClientID]){
+			res.status(500).send('System service in use');
+			
+		} else if (dataaccess.isDBOnline()){
 			dataaccess.getSignalGroupDetails(signalGroupID, function (err, signalGroup){
 				if(err){
 					res.status(500).send('Cannot query specified signal in database. Error: ' + err);
@@ -151,7 +147,10 @@ module.exports = function (settings, dataaccess){
 	
 	module.newGraph = function (req, res, next){
 		
-		if (dataaccess.isDBOnline()){
+		if (sas.UIClients[sas.sysClientID]){
+			res.status(500).send('System service in use');
+			
+		} else if (dataaccess.isDBOnline()){
 			
 			//create new signal group profile
 			sas.signalGroupID = Date.now();
@@ -179,9 +178,15 @@ module.exports = function (settings, dataaccess){
 	};
 	
 	module.record = function(req, res, next){
+		var reqClientID = req.body.ID;
+		
 		//if no samplers are connected
 		if (WSConn.sampler.clients.length == 0){
 			res.status(500).send('No samplers are connected');
+			
+		} else if (reqClientID != sas.sysClientID){
+			res.status(500).send('Error access denied');
+			
 		} else {
 			
 			if (dataaccess.isDBOnline()){
@@ -211,23 +216,48 @@ module.exports = function (settings, dataaccess){
 		}
 	};
 	
+	module.realTest = function (req, res, next){
+		
+		if (sas.UIClients[sas.sysClientID]){
+			res.status(500).send('System service in use');
+			
+		} else if (dataaccess.isDBOnline()){
+			//res.status(500).send('Error inserting new signal group. Error: ' + err);
+			res.render('test', { WSPort: settings.UIWebsocketPort });
+		}
+	};
+	
 	module.testTLC = function(req, res, next){
+		var reqClientID = req.body.ID;
+		
 		//if no samplers are connected
 		if (WSConn.sampler.clients.length == 0){
 			res.status(500).send('No samplers are connected');
+			
+		} else if (reqClientID != sas.sysClientID){
+			res.status(500).send('Error access denied');
+			
 		} else {
+			
 			if (sas.actionState == ACTION_NONE){
 				
 				useTLC(function(err){
-						
+					
+		
 					if(err){
 						res.status(500).send('Cannot establish connection to the TLC. ' + err);
 					} else {
 						//WSConn.TLC.on('message', function(message) {}); //use this to get TLC output
 						sas.samplerActionFunction = function (data){
+								data.output = sas.TLCActionState;
 								uploadEMGToTLC(data);
 								sendChannelValuesToUI(data);
 						};
+						
+						sas.TLCActionState = 0;
+						sas.TLCStateChangeID = setInterval( function(){
+							sas.TLCActionState = (sas.TLCActionState + 1) % settings.TLCStateNum;
+						}, settings.TLCStateChangePeriod);
 						
 						startSampler(); 
 						sas.actionState = ACTION_TEST;
@@ -238,6 +268,9 @@ module.exports = function (settings, dataaccess){
 			} else if(sas.actionState == ACTION_TEST){
 				
 				stopSampler();
+				clearInterval(sas.TLCStateChangeID);
+				
+				sas.TLCActionState = -1;
 				sas.samplerActionFunction = null;
 				sas.actionState = ACTION_NONE;
 				res.send(JSON.stringify({"result": "TLC dynamic learning stop success"}));
@@ -248,8 +281,12 @@ module.exports = function (settings, dataaccess){
 	};
 	
 	module.playback = function(req, res, next) {
+		var reqClientID = req.body.ID;
 		
-		if (dataaccess.isDBOnline()){
+		if (reqClientID != sas.sysClientID){
+			res.status(500).send('Error access denied');
+			
+		} else if (dataaccess.isDBOnline()){
 			
 			if (sas.actionState == ACTION_NONE){
 				
@@ -271,8 +308,12 @@ module.exports = function (settings, dataaccess){
 	
 	module.save = function(req, res, next){
 		var newSignalGroupName = req.body.signalGroupName;
+		var reqClientID = req.body.ID;
 		
-		if (dataaccess.isDBOnline()){
+		if (reqClientID != sas.sysClientID){
+			res.status(500).send('Error access denied');
+			
+		} else if (dataaccess.isDBOnline()){
 			if (sas.actionState == ACTION_NONE){
 				if (newSignalGroupName){
 					//update signal name 
@@ -299,12 +340,15 @@ module.exports = function (settings, dataaccess){
 		} else {
 			res.status(500).send('Cannot establish connection to the database');
 		}
-		
 	};
 	
 	module.cancel = function(req, res, next){
+		var reqClientID = req.body.ID;
 		
-		if (dataaccess.isDBOnline()){
+		if (reqClientID != sas.sysClientID){
+			res.status(500).send('Error access denied');
+			
+		} else if (dataaccess.isDBOnline()){
 			if (sas.actionState == ACTION_NONE){
 				dataaccess.clearTmpData();
 				clearSAS();
@@ -320,8 +364,12 @@ module.exports = function (settings, dataaccess){
 	};
 	
 	module.add = function(req, res, next){
+		var reqClientID = req.body.ID;
 		
-		if (dataaccess.isDBOnline()){
+		if (reqClientID != sas.sysClientID){
+			res.status(500).send('Error access denied');
+			
+		} else if (dataaccess.isDBOnline()){
 			if (sas.actionState == ACTION_NONE){
 				
 				dataaccess.addChannelToSignalGroup(sas, function (err){
@@ -342,7 +390,12 @@ module.exports = function (settings, dataaccess){
 	};
 	
 	module.deleteSignalGroup = function(req, res, next){
-		if (dataaccess.isDBOnline()){
+		var reqClientID = req.body.ID;
+		
+		if (reqClientID != sas.sysClientID){
+			res.status(500).send('Error access denied');
+			
+		} else if (dataaccess.isDBOnline()){
 			if (sas.actionState == ACTION_NONE){
 				
 				dataaccess.deleteSignalGroup(sas);				
@@ -359,6 +412,176 @@ module.exports = function (settings, dataaccess){
 		}
 	};
 	
+	module.diagnostic = function(req, res, next){
+		
+		res.render('diagnostic', { WSPort: settings.UIWebsocketPort });
+	};
+	
+	module.serviceStatus = function(req, res, next){
+		console.log("Nodejs Server is online");
+		console.log("MongoDB Server is online");
+		console.log("Android Wear software is connected");
+		console.log("TLC Server can not be reached. Error! Ping test failed. Server responds is: null");
+		res.send(JSON.stringify({"controllerOnline": true, "databaseOnline": dataaccess.isDBOnline(), "samplerOnline": WSConn.sampler.clients.length > 0, "TLCOnline": false}));
+	};
+	
+	module.initPerformanceTest = function(req, res, next){
+		
+		if (sas.actionState == ACTION_PERFORMANCE){
+			res.status(500).send('Performance measurement in progress');
+			
+		} else {
+			if(sas.UIClients[sas.sysClientID]){
+				//the WS close function will reset SAS and service values, and switch to performance mode
+				sas.UIClients[sas.sysClientID].close();
+			}
+			
+			sas.actionState = ACTION_PERFORMANCE;
+		}
+		
+		res.send(JSON.stringify({"result": "Server services reinitialized"}));
+	};
+	
+	module.performanceTest = function(req, res, next){
+		
+		var reqClientID = req.body.ID;
+		
+		if (reqClientID != sas.sysClientID){
+			res.status(500).send('Error access denied');
+			
+		} else if(sas.actionState != ACTION_PERFORMANCE){
+			res.status(500).send('Error starting performance error. Please reinitialize the service');
+			
+		} else {
+			//check if sampler is online
+			if (WSConn.sampler.clients.length > 0) {  
+				
+				res.send(JSON.stringify({"result": "performance started"}));
+				performanceList(function(){
+					
+					//res.send(JSON.stringify({"result": "Performance measurements completed"}));
+					
+				});			
+				
+			} else {
+				console.log('Cannot establish connection to the sampler. Access to the sampler is required.');
+				res.status(500).send('Cannot establish connection to the sampler. Please reinitialize the service');
+				
+			}
+		} 
+	};
+	
+	function msghandler(data){
+						var data = JSON.parse(data);
+						
+						if(data.status == "done") {
+							//signal UI to stop (not done)
+							console.log("Starting Performance Test");
+							performanceList();
+						} else {
+							sas.UIClients[sas.sysClientID].send(JSON.stringify({"name" : settings.databaseName, "input": data.input, "timestamp": data.timestamp}), function(err){
+								if (err) console.log("Fail to send client channel data. Error: " + err);
+								
+							});
+						}
+					};
+	
+	function performanceList(){
+		
+				
+		if(sas.actionState == ACTION_PERFORMANCE) {
+			
+			if(sas.performanceState == PERFORMANCE_NONE){
+				sas.performanceState = PERFORMANCE_UI;
+				
+				// sas.UIClients[sas.sysClientID]  send UI signal to process stuff too
+				
+				WSConn.sampler.clients.forEach(function each(client) {
+					//set the sampler message handler
+					client.removeListener('message', samplerDefaultHandler);
+					client.on('message', msghandler);
+						
+					//start the sampler
+					client.send(JSON.stringify({"command" : "startPerformance"}), function(err){
+						if(err)	console.log("Cannot send start command to sampler. Error: " + err);
+						
+					});
+				});
+				
+			} else if(sas.performanceState == PERFORMANCE_UI){
+				sas.performanceState = PERFORMANCE_DATABASE;
+				
+				//check if the database is online for the database test
+				if (dataaccess.isDBOnline()){
+					
+					performanceList();
+					
+				} else {
+					console.log('Cannot establish connection to the database');
+					performanceList();
+				}
+				
+			} else if (sas.performanceState == PERFORMANCE_DATABASE){
+				sas.performanceState = PERFORMANCE_TLC;
+				performanceList();
+				
+				/*
+				if (){ //check if TLC is online
+				
+				} else {
+					console.log('Cannot establish connection to the TLC');
+					performanceList();
+				}*/
+				
+			} else if (sas.performanceState == PERFORMANCE_TLC){
+				console.log('Performance measurements completed');
+				WSConn.sampler.clients.forEach(function each(client) {
+					client.removeListener('message', msghandler);
+					client.on('message', samplerDefaultHandler);
+				});
+				sas.UIClients[sas.sysClientID].close();
+				//sas.UIClients[sas.sysClientID].send(JSON.stringify({"status" : "done"}));
+				
+			}
+			
+		}
+	};
+	
+	function samplerDefaultHandler(message){
+		//console.log("Data Entry: " + message);
+		
+		var data = JSON.parse(message);
+		
+		if(sas.actionState == ACTION_RECORD || sas.actionState == ACTION_TEST){
+			if ( data.input && data.input.length == sas.channelVal.length ){ 
+				sas.samplerActionFunction(data);
+				
+			} else {
+				console.log("Error, data fields not properly defined");
+			}
+			
+		} else if(data.command == "store"){
+			if(dataaccess.isDBOnline()){
+				if ( (data.input && data.input.length <= sas.maxChannelNum) && data.output && data.signalGroupID){
+				
+					//require signal ID
+					signalInfo = {'signalGroupID': data.signalGroupID};
+					
+					dataaccess.insertNewSignalDirectly(signalInfo, data.output, data.input, function(err){
+						if(err){
+							ws.send(JSON.stringify({"status" : "Error"}));
+						}
+					});
+				} else {
+					console.log("Error, data fields not properly defined");
+				}
+			} else {
+				console.log("Error inserting to database. Database not online");
+				
+			}
+		} 
+	};
+	
 	function clearSAS(){
 		
 		if (sas.actionState != ACTION_NONE && WSConn.sampler.clients.length > 0){
@@ -369,6 +592,7 @@ module.exports = function (settings, dataaccess){
 		sas.signalGroupID = null;
 		sas.signalGroupName = "";
 		sas.actionState = ACTION_NONE;
+		sas.performanceState = PERFORMANCE_NONE;
 		sas.channelVal = [];	
 	};
 	
@@ -408,7 +632,7 @@ module.exports = function (settings, dataaccess){
 	
 	function uploadEMGToTLC(data){
 		
-		WSConn.TLC.send(JSON.stringify({"name" : settings.databaseName, "output": 1, "input": data.input})); //data.output
+		WSConn.TLC.send(JSON.stringify({"name" : settings.databaseName, "input": data.input, "output":data.output, "timestamp": data.timestamp}));
 	};
 	
 	function playbackEMG(){
@@ -431,7 +655,14 @@ module.exports = function (settings, dataaccess){
 	};
 	
 	function sendChannelValuesToUI(data){
-		
+		sas.UIClients[sas.sysClientID].send(JSON.stringify({"name" : settings.databaseName, "input": data.input, "output":data.output}), function(err){ //
+			//error sending websocket client  info
+			if (err){
+				console.log("Fail to send client channel data. Error: " + err);
+				
+			}
+		});
+		/*
 		WSConn.UI.clients.forEach(function each(client) {
 			client.send(JSON.stringify({"name" : settings.databaseName, "input": data.input}), function(err){ //"output":data.output
 				//error sending websocket client  info
@@ -440,19 +671,17 @@ module.exports = function (settings, dataaccess){
 					
 				}
 			});
-		});
+		});*/
 	};
 	
 	function stopUIAction(){
 		
-		WSConn.UI.clients.forEach(function each(client) {
-			client.send(JSON.stringify({"command":"stop"}), function(err){
-				//error sending websocket client  info
-				if (err){
-					console.log("Cannot send commands to UI client. Error: " + err);
-					
-				}
-			});
+		sas.UIClients[sas.sysClientID].send(JSON.stringify({"command":"stop"}), function(err){ 
+			//error sending websocket client  info
+			if (err){
+				console.log("Cannot send commands to UI client. Error: " + err);
+				
+			}
 		});
 	};
 	
@@ -491,6 +720,16 @@ module.exports = function (settings, dataaccess){
 					console.log("Error with connection to the TLC. " + err);
 					WSConn.TLC.close();//test this
 					WSConn.TLC = null;
+				});
+				
+				WSConn.TLC.on('message', function(message) {
+					var TLCmsg = JSON.parse(message);
+					
+					sas.UIClients[sas.sysClientID].send(JSON.stringify({"name" : "TLCOutput", "output": TLCmsg.output}), function(err){ 
+						if (err){
+							console.log("Fail to send TLC data to UI. Error: " + err);
+						}
+					});
 				});
 				
 				callback(null);

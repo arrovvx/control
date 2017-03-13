@@ -228,18 +228,6 @@ $(document).ready(function(){
 			});
 		});
 		
-		function convertTLCRes(data){
-			if(data == 0){
-				return "Index";
-			} else if(data == 1){
-				return "Middle";
-			} else if(data == 2){
-				return "Ring";
-			} else if(data == 3){
-				return "Pinky";
-			}
-		}
-		
 		//result button handler, tell the server to load samples to test the AI result
 		$( "#test" ).click(function() {
 			//check if the an action is already activated
@@ -260,21 +248,7 @@ $(document).ready(function(){
 						ws.onmessage = null;
 						clearInterval(schedulerID);
 					} else {
-						ws.onmessage = function(WSRes){
-							var data = JSON.parse(WSRes.data);
-							
-							if(data.name == "TLCOutput"){
-								if($("#output").html() == convertTLCRes(data.output))
-									$("#predict").css('color', 'green');
-								else
-									$("#predict").css('color', 'red');
-								$("#predict").html(convertTLCRes(data.output));
-							} else {
-								$("#output").html(convertTLCRes(data.output));
-								plotWSRes(WSRes);
-							}
-							
-						}
+						ws.onmessage = plotWSRes;
 						schedulerID = setInterval( renderPlots, renderPeriod); 
 					}
 				},
