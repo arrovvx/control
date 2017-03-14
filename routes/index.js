@@ -422,7 +422,7 @@ module.exports = function (settings, dataaccess){
 		console.log("MongoDB Server is online");
 		console.log("Android Wear software is connected");
 		console.log("TLC Server can not be reached. Error! Ping test failed. Server responds is: null");
-		res.send(JSON.stringify({"controllerOnline": true, "databaseOnline": dataaccess.isDBOnline(), "samplerOnline": WSConn.sampler.clients.length > 0, "TLCOnline": false}));
+		res.send(JSON.stringify({"controllerOnline": true, "databaseOnline": dataaccess.isDBOnline(), "samplerOnline": WSConn.sampler.clients.length > 0, "TLCOnline": Boolean(WSConn.TLC)}));
 	};
 	
 	module.initPerformanceTest = function(req, res, next){
@@ -709,8 +709,11 @@ module.exports = function (settings, dataaccess){
 				
 				WSConn.TLC.on('error', function(err) {
 					if (sas.actionState == ACTION_TEST){
+						
 						stopUIAction();
 						stopSampler();
+						clearInterval(sas.TLCStateChangeID);
+						sas.TLCActionState = -1;
 						sas.samplerActionFunction = null;
 						sas.actionState = ACTION_NONE;
 						
@@ -741,6 +744,8 @@ module.exports = function (settings, dataaccess){
 				if (sas.actionState == ACTION_TEST){
 					stopUIAction();
 					stopSampler();
+					clearInterval(sas.TLCStateChangeID);
+					sas.TLCActionState = -1;
 					sas.samplerActionFunction = null;
 					sas.actionState = ACTION_NONE;
 					

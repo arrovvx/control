@@ -2,6 +2,7 @@ $(document).ready(function(){
 
 	var ws = null;
 	var wsID = null;
+	var startTime = 0;
 
 	refreshStatus(function(){
 		activateUI();	
@@ -54,9 +55,13 @@ $(document).ready(function(){
 			};			
 
 			ws.onclose = function() { 
-				$("#performance").toggleClass('btn-default');
-				$("#performance").removeAttr('disabled');
-				$("#result").html( "Latency: " + sum / counter+ "ms");
+				if (counter >= 9000){ 
+					$("#performance").toggleClass('btn-default');
+					$("#performance").removeAttr('disabled');
+					$("#result").html( "Latency: " + sum / counter+ "ms");
+					$("#result").append(counter + "<br>Throughput: " + (counter* 1000) / (Math.abs(Date.now() - startTime)) + "req/s");
+				}
+				startTime = 0
 				counter = -2;
 				sum = 0;
 				console.log("Connection is closed...");	
@@ -79,6 +84,7 @@ $(document).ready(function(){
 			$("#performance").toggleClass('btn-default'); //make button disappear and have some animation saying initializing
 			$("#performance").attr('disabled','disabled');
 			
+			startTime = Date.now();
 			refreshStatus(function(){
 				$.ajax({
 					type: "POST",
