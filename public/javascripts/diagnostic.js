@@ -58,8 +58,8 @@ $(document).ready(function(){
 				if (counter >= 9000){ 
 					$("#performance").toggleClass('btn-default');
 					$("#performance").removeAttr('disabled');
-					$("#result").html( "Latency: " + sum / counter+ "ms");
-					$("#result").append("<br>Throughput: " + (counter* 1000) / (Math.abs(Date.now() - startTime)) + "req/s");
+					$("#result").html( "Latency: " + sum / counter+ " ms");
+					$("#result").append("<br>Throughput: " + (counter* 1000) / (Math.abs(Date.now() - startTime)) + " req/s");
 				}
 				startTime = 0
 				counter = -2;

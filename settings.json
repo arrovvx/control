@@ -3,17 +3,22 @@
 	
 	"UIDataTransferPeriod": 2,
 	"maxChannelNumber": 8,
+	"realTestChannelNum": 5,
 	
 	"controllerHTTPPort": 9080,
 	"UIWebsocketPort": 9081,
+	"watchWebsocketPort": 9082,
 	"SamplerWebsocketPort": 8889,
 	
 	"TLCIP": "127.0.0.1",
 	"TLCWebsocketPort": 8890,
 	"TLCStateChangePeriod": 1000,
-	"TLCStateNum": 4,
+	"TLCStateNum": 5,
 	
-	"databaseIP": "192.168.99.100",
+	"MDIP": "127.0.0.1",
+	"MDWebsocketPort": 8891,
+	
+	"databaseIP": "192.168.99.101",
 	"databasePort": 27017,
 	"databaseName": "EMG",
 	"mongoRetryPeriod" : 1000,

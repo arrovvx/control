@@ -230,12 +230,14 @@ $(document).ready(function(){
 		
 		function convertTLCRes(data){
 			if(data == 0){
-				return "Index";
+				return "Rest";
 			} else if(data == 1){
-				return "Middle";
+				return "Index";
 			} else if(data == 2){
-				return "Ring";
+				return "Middle";
 			} else if(data == 3){
+				return "Ring";
+			} else if(data == 4){
 				return "Pinky";
 			}
 		}

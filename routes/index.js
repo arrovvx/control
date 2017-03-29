@@ -6,7 +6,8 @@ var ACTION_NONE = 0,
 	ACTION_RECORD = 1,
 	ACTION_PLAYBACK = 2,
 	ACTION_TEST = 3,
-	ACTION_PERFORMANCE = 4;
+	ACTION_PERFORMANCE = 4,
+	ACTION_REAL_TEST = 5;
 
 var PERFORMANCE_NONE = 0,
 	PERFORMANCE_UI = 1,
@@ -19,7 +20,9 @@ module.exports = function (settings, dataaccess){
 	var WSConn = {
 		UI: new ws({port:(settings.UIWebsocketPort)}),
 		sampler: new ws({port:(settings.SamplerWebsocketPort)}),
-		TLC: null //new wsClient('ws://' + settings.TLCIP + ':' + settings.TLCWebsocketPort + '/')
+		TLC: null,//new wsClient('ws://' + settings.TLCIP + ':' + settings.TLCWebsocketPort + '/')
+		MD: null,
+		watch: new ws({port:(settings.watchWebsocketPort)})
 	};
 	
 	//define server action states (sas)
@@ -37,7 +40,7 @@ module.exports = function (settings, dataaccess){
 		samplerActionFunction: null,
 		TLCStateChangeID: 0,
 		TLCActionState: -1,
-		
+		watchClientNum: 0,
 	};
 	
 	WSConn.UI.on('connection', function chat(ws){
@@ -86,6 +89,25 @@ module.exports = function (settings, dataaccess){
 			}
 			
 			console.log("connection to sampler closed");
+		});
+		
+	});
+	
+	WSConn.watch.on('connection', function chat(wsWatch){
+		console.log('Watch client connected');
+		watchClientNum += 1;
+		
+		wsSample.on('close', function close() {
+			
+			sas.watchClientNum -= 1;
+			if (sas.actionState == ACTION_REAL_TEST){
+				sas.actionState = ACTION_NONE;
+				sas.samplerActionFunction = null;
+				stopUIAction();
+				console.log("current recording action stopped");
+			}
+			
+			console.log("connection to watch closed");
 		});
 		
 	});
@@ -177,6 +199,147 @@ module.exports = function (settings, dataaccess){
 		res.send(JSON.stringify({"channels": sas.channelVal, "signalGroupName": sas.signalGroupName}));
 	};
 	
+	
+	
+	module.realTest = function (req, res, next){
+		if (sas.UIClients[sas.sysClientID]){
+			res.status(500).send('System service in use');
+			
+		} else {
+			
+			sas.actionState = ACTION_NONE;
+			
+			//prepare 5 channel test
+			for(var i; i < 5; i++)
+				sas.channelVal.push(i);
+			
+			res.render('test', { WSPort: settings.UIWebsocketPort });
+		} 
+	};
+	
+	module.realTestActivate = function (req, res, next){
+		var reqClientID = req.body.ID;
+		
+		//if no samplers are connected
+		if (WSConn.sampler.clients.length == 0){
+			res.status(500).send('No samplers are connected');
+			
+		} else if (reqClientID != sas.sysClientID){
+			res.status(500).send('Error access denied');
+			
+		} else {
+			
+			if (sas.actionState == ACTION_NONE){
+				
+				useTLC(function(err){
+					
+		
+					if(err){
+						res.status(500).send('Cannot establish connection to the TLC. ' + err);
+					} else {
+						useMD(function(err){
+							
+							if(err){
+								res.status(500).send('Cannot establish connection to the Motion Detector. ' + err);
+							} else {
+								
+								//rediret TLC message to both UI and MD
+								WSConn.TLC.on('message', function(message) {
+									var TLCmsg = JSON.parse(message);
+									
+									//send TLC output to UI
+									sas.UIClients[sas.sysClientID].send(JSON.stringify({"name" : "TLCOutput", "output": TLCmsg.output}), function(err){ 
+										if (err){
+											console.log("Fail to send TLC data to UI. Error: " + err);
+										}
+									});
+									
+									//send TLC output to MD
+									WSConn.MD.send(JSON.stringify({"name" : "TLCOutput", "output": TLCmsg.output}));
+									
+								});
+								
+								//redirect MD message to UI
+								WSConn.MD.on('message', function(message) {
+									var MDmsg = JSON.parse(message);
+									sas.UIClients[sas.sysClientID].send(JSON.stringify({"name" : "MDOutput", "output": MDmsg.output}), function(err){ 
+										if (err){
+											console.log("Fail to send Motion Detector data to UI. Error: " + err);
+										}
+									});
+								});
+								
+								//redirect UI message to Watch
+								WSConn.UI.on('message', function(message) {
+									var UImsg = JSON.parse(message);
+									
+									if(message.name == "text"){
+										console.log("UI message: " + message);
+									
+										WSConn.watch.clients.forEach(function each(client) {
+											client.send(UImsg, function(err){
+												
+												if(err){
+													console.log("Cannot send word to Watch. Error: " + err);
+												}
+											});
+										});
+									}
+								});
+								
+								sas.samplerActionFunction = function (data){
+									
+										if(data.name == "EMG"){
+											data.output = sas.TLCActionState;
+											uploadEMGToTLC(data);
+											sendChannelValuesToUI(data);
+										}
+										if(data.name == "ACC"){
+											data.output = null;
+											uploadACCToMD(data);
+											sendChannelValuesToUI(data);
+										}
+								};
+								
+								sas.TLCActionState = 0;
+								sas.TLCStateChangeID = setInterval( function(){
+									sas.TLCActionState = (sas.TLCActionState + 1) % settings.TLCStateNum;
+								}, settings.TLCStateChangePeriod);
+								
+								startSampler(); 
+								sas.actionState = ACTION_REAL_TEST;
+								res.send(JSON.stringify({"result": "Real Test start success"}));
+							}
+						});
+					}
+				});
+				
+			} else if(sas.actionState == ACTION_REAL_TEST){
+				
+				stopSampler();
+				
+				//may not be needed
+				clearInterval(sas.TLCStateChangeID); 
+				sas.TLCActionState = -1;
+				
+				sas.samplerActionFunction = null;
+				sas.actionState = ACTION_NONE;
+				
+				if(WSConn.TLC){
+					WSConn.TLC.close();
+					WSConn.TLC = null;
+				}
+				if(WSConn.MD){
+					WSConn.MD.close();
+					WSConn.MD = null;
+				}
+				res.send(JSON.stringify({"result": "Real Test stop success"}));
+			} else {
+				res.status(500).send('Server resource claimed by another action');
+			}
+		}
+	};
+	
 	module.record = function(req, res, next){
 		var reqClientID = req.body.ID;
 		
@@ -194,8 +357,10 @@ module.exports = function (settings, dataaccess){
 				if (sas.actionState == ACTION_NONE){
 					
 					sas.samplerActionFunction = function (data){
-						uploadEMGToDB(data);
-						sendChannelValuesToUI(data);
+						if(data.name == "EMG"){
+							uploadEMGToDB(data);
+							sendChannelValuesToUI(data);
+						}
 					};
 					
 					startSampler();
@@ -213,17 +378,6 @@ module.exports = function (settings, dataaccess){
 			} else {
 				res.status(500).send('Cannot establish connection to the database');
 			}
-		}
-	};
-	
-	module.realTest = function (req, res, next){
-		
-		if (sas.UIClients[sas.sysClientID]){
-			res.status(500).send('System service in use');
-			
-		} else if (dataaccess.isDBOnline()){
-			//res.status(500).send('Error inserting new signal group. Error: ' + err);
-			res.render('test', { WSPort: settings.UIWebsocketPort });
 		}
 	};
 	
@@ -246,19 +400,35 @@ module.exports = function (settings, dataaccess){
 		
 					if(err){
 						res.status(500).send('Cannot establish connection to the TLC. ' + err);
+
 					} else {
-						//WSConn.TLC.on('message', function(message) {}); //use this to get TLC output
+						//redirect TLC output to UI
+						WSConn.TLC.on('message', function(message) {
+							var TLCmsg = JSON.parse(message);
+							//send TLC output to UI
+							sas.UIClients[sas.sysClientID].send(JSON.stringify({"name" : "TLCOutput", "output": TLCmsg.output}), function(err){ 
+								if (err){
+									console.log("Fail to send TLC data to UI. Error: " + err);
+								}
+							});
+						});
+						
+						//setup sampler action
 						sas.samplerActionFunction = function (data){
-								data.output = sas.TLCActionState;
-								uploadEMGToTLC(data);
-								sendChannelValuesToUI(data);
+								if(data.name == "EMG"){
+									data.output = sas.TLCActionState;
+									uploadEMGToTLC(data);
+									sendChannelValuesToUI(data);
+								}
 						};
 						
+						//stop training timer
 						sas.TLCActionState = 0;
 						sas.TLCStateChangeID = setInterval( function(){
 							sas.TLCActionState = (sas.TLCActionState + 1) % settings.TLCStateNum;
 						}, settings.TLCStateChangePeriod);
 						
+						//start sampler and return success
 						startSampler(); 
 						sas.actionState = ACTION_TEST;
 						res.send(JSON.stringify({"result": "TLC dynamic learning start success"}));
@@ -273,6 +443,11 @@ module.exports = function (settings, dataaccess){
 				sas.TLCActionState = -1;
 				sas.samplerActionFunction = null;
 				sas.actionState = ACTION_NONE;
+				
+				if(WSConn.TLC){
+					WSConn.TLC.close();
+					WSConn.TLC = null;
+				}
 				res.send(JSON.stringify({"result": "TLC dynamic learning stop success"}));
 			} else {
 				res.status(500).send('Server resource claimed by another action');
@@ -472,23 +647,22 @@ module.exports = function (settings, dataaccess){
 	};
 	
 	function msghandler(data){
-						var data = JSON.parse(data);
-						
-						if(data.status == "done") {
-							//signal UI to stop (not done)
-							console.log("Starting Performance Test");
-							performanceList();
-						} else {
-							sas.UIClients[sas.sysClientID].send(JSON.stringify({"name" : settings.databaseName, "input": data.input, "timestamp": data.timestamp}), function(err){
-								if (err) console.log("Fail to send client channel data. Error: " + err);
-								
-							});
-						}
-					};
+		var data = JSON.parse(data);
+		
+		if(data.status == "done") {
+			//signal UI to stop (not done)
+			console.log("Starting Performance Test");
+			performanceList();
+		} else {
+			sas.UIClients[sas.sysClientID].send(JSON.stringify({"name" : settings.databaseName, "input": data.input, "timestamp": data.timestamp}), function(err){
+				if (err) console.log("Fail to send client channel data. Error: " + err);
+				
+			});
+		}
+	};
 	
 	function performanceList(){
 		
-				
 		if(sas.actionState == ACTION_PERFORMANCE) {
 			
 			if(sas.performanceState == PERFORMANCE_NONE){
@@ -552,10 +726,13 @@ module.exports = function (settings, dataaccess){
 		
 		var data = JSON.parse(message);
 		
-		if(sas.actionState == ACTION_RECORD || sas.actionState == ACTION_TEST){
+		if(sas.actionState == ACTION_REAL_TEST){
+			sas.samplerActionFunction(data); //didnt add test condition
+			
+		} else if(sas.actionState == ACTION_RECORD || sas.actionState == ACTION_TEST){
 			if ( data.input && data.input.length == sas.channelVal.length ){ 
+			
 				sas.samplerActionFunction(data);
-				
 			} else {
 				console.log("Error, data fields not properly defined");
 			}
@@ -588,6 +765,8 @@ module.exports = function (settings, dataaccess){
 			stopSampler();
 		}
 		
+		clearInterval(sas.TLCStateChangeID);
+		sas.TLCActionState = -1;
 		clearInterval(sas.schedulerID);
 		sas.signalGroupID = null;
 		sas.signalGroupName = "";
@@ -635,6 +814,11 @@ module.exports = function (settings, dataaccess){
 		WSConn.TLC.send(JSON.stringify({"name" : settings.databaseName, "input": data.input, "output":data.output, "timestamp": data.timestamp}));
 	};
 	
+	function uploadACCToMD(data){
+		
+		WSConn.MD.send(JSON.stringify({"name" : "ACC", "input": data.input, "output":data.output, "timestamp": data.timestamp}));
+	};
+	
 	function playbackEMG(){
 		
 		dataaccess.getSignals(sas, 1, function(err, newTimestamp, signal){
@@ -655,7 +839,7 @@ module.exports = function (settings, dataaccess){
 	};
 	
 	function sendChannelValuesToUI(data){
-		sas.UIClients[sas.sysClientID].send(JSON.stringify({"name" : settings.databaseName, "input": data.input, "output":data.output}), function(err){ //
+		sas.UIClients[sas.sysClientID].send(JSON.stringify({"name" : data.name, "input": data.input, "output":data.output}), function(err){ //
 			//error sending websocket client  info
 			if (err){
 				console.log("Fail to send client channel data. Error: " + err);
@@ -725,23 +909,12 @@ module.exports = function (settings, dataaccess){
 					WSConn.TLC = null;
 				});
 				
-				WSConn.TLC.on('message', function(message) {
-					var TLCmsg = JSON.parse(message);
-					
-					sas.UIClients[sas.sysClientID].send(JSON.stringify({"name" : "TLCOutput", "output": TLCmsg.output}), function(err){ 
-						if (err){
-							console.log("Fail to send TLC data to UI. Error: " + err);
-						}
-					});
-				});
-				
 				callback(null);
 			});
 			
-			
 			//this will never initially be run
 			WSConn.TLC.on('close', function(message) {
-				if (sas.actionState == ACTION_TEST){
+				if (sas.actionState == ACTION_TEST || sas.actionState == ACTION_REAL_TEST ){
 					stopUIAction();
 					stopSampler();
 					clearInterval(sas.TLCStateChangeID);
@@ -752,8 +925,84 @@ module.exports = function (settings, dataaccess){
 					console.log("current TLC test action stopped");
 				}
 				
+				if(WSConn.TLC){
+					WSConn.TLC.close();
+					WSConn.TLC = null;
+				}
+				if(WSConn.MD){
+					WSConn.MD.close();
+					WSConn.MD = null;
+				}
 				console.log("Connection to the TLC closed. Msg: " + message);
-				WSConn.TLC = null;
+			});
+		}
+	};
+	
+	//wrapper to establish connection to the MD websocket server and send request
+	function useMD(callback){
+		
+		if(WSConn.MD){
+			callback(null);
+			
+		} else {
+			
+			WSConn.MD = new wsClient('ws://' + settings.MDIP + ':' + settings.MDWebsocketPort + '/');
+		
+			//the error or open function will be triggered initially
+			WSConn.MD.on('error', function(err) {
+				
+				console.log("Error with connection to the Motion Detector. " + err);
+				WSConn.MD.close();
+				WSConn.MD = null;
+				callback(err);
+			});
+			
+			WSConn.MD.on('open', function() {
+				console.log("Connection to the Motion Detector established");
+				
+				WSConn.MD.on('error', function(err) {
+					if (sas.actionState == ACTION_REAL_TEST){
+						
+						stopUIAction();
+						stopSampler();
+						
+						sas.samplerActionFunction = null;
+						sas.actionState = ACTION_NONE;
+						
+						console.log("current Motion Detector test action stopped");
+					}
+					
+					if(WSConn.MD){
+						WSConn.MD.close();
+						WSConn.MD = null;
+					}
+					console.log("Error with connection to the Motion Detector. " + err);
+				});
+				
+				callback(null);
+			});
+			
+			
+			//this will never initially be run
+			WSConn.MD.on('close', function(message) {
+				if (sas.actionState == ACTION_REAL_TEST){
+					stopUIAction();
+					stopSampler();
+					
+					sas.samplerActionFunction = null;
+					sas.actionState = ACTION_NONE;
+					
+					console.log("current Motion Detector test action stopped");
+				}
+				if(WSConn.TLC){
+					WSConn.TLC.close();
+					WSConn.TLC = null;
+				}
+				if(WSConn.MD){
+					WSConn.MD.close();
+					WSConn.MD = null;
+				}
+				console.log("Connection to the Motion Detector closed. Msg: " + message);
 			});
 		}
 	};
