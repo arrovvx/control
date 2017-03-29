@@ -7,7 +7,9 @@ var ACTION_NONE = 0,
 	ACTION_PLAYBACK = 2,
 	ACTION_TEST = 3,
 	ACTION_PERFORMANCE = 4,
-	ACTION_REAL_TEST = 5;
+	ACTION_REAL_TEST = 5,
+	ACTION_REAL_TEST_CALIBRATE = 6;
+	ACTION_REAL_TEST_READY = 7;
 
 var PERFORMANCE_NONE = 0,
 	PERFORMANCE_UI = 1,
@@ -41,6 +43,7 @@ module.exports = function (settings, dataaccess){
 		TLCStateChangeID: 0,
 		TLCActionState: -1,
 		watchClientNum: 0,
+		realTestMDListener: null,
 	};
 	
 	WSConn.UI.on('connection', function chat(ws){
@@ -178,7 +181,13 @@ module.exports = function (settings, dataaccess){
 			sas.signalGroupID = Date.now();
 			sas.signalGroupName = "";
 			sas.actionState = ACTION_NONE;
-			sas.channelVal.push(0);
+			sas.channelVal.push(1)
+			//prepare default channels
+			
+			for(i = 0; i < settings.defaultChannelNumber - 1; i++){
+				sas.channelVal.push(i + 1);
+				console.log("adding channels");
+			}
 			
 			dataaccess.insertNewSignalGroup(sas, function (err){
 				if(err) {
@@ -210,11 +219,68 @@ module.exports = function (settings, dataaccess){
 			sas.actionState = ACTION_NONE;
 			
 			//prepare 5 channel test
-			for(var i; i < 5; i++)
+			for(var i; i < settings.realTestChannelNumber; i++)
 				sas.channelVal.push(i);
 			
 			res.render('test', { WSPort: settings.UIWebsocketPort });
 		} 
+	};
+	
+	module.realTestCalibrate = function (req, res, next){
+		
+		//if no samplers are connected
+		if (WSConn.sampler.clients.length == 0){
+			res.status(500).send('No samplers are connected');
+			
+		} else {
+			
+			if (sas.actionState == ACTION_NONE){
+				
+				useMD(function(err){
+					
+					if(err){
+						res.status(500).send('Cannot establish connection to the Motion Detector. ' + err);
+					} else {
+						
+						sas.actionState = ACTION_REAL_TEST_CALIBRATE;
+						
+						//setting the listener function
+						sas.realTestMDListener = function(message) {
+							var MDmsg = JSON.parse(message);
+							
+							//only return good if there is done status
+							if(MDmsg.name == "MDStatus" && MDmsg.output == "done"){
+								stopSampler();
+								
+								sas.actionState = ACTION_REAL_TEST_READY;
+								
+								//double check for error
+								if(sas.realTestMDListener)
+									res.send(JSON.stringify({"result": "Real Test Motion Detector Calibration Success"}));
+								
+								WSConn.MD.removeListener('message', sas.realTestMDListener);
+								sas.realTestMDListener = null;
+							}
+						};
+						
+						//redirect MD message to UI
+						WSConn.MD.on('message', sas.realTestMDListener);
+						
+						sas.samplerActionFunction = function (data){
+								if(data.name == "ACC"){
+									data.output = null;
+									uploadACCToMD(data);
+								}
+						};
+						
+						startSampler(); 
+					}
+				});
+				
+			} else {
+				res.status(500).send('Server resource claimed by another action');
+			}
+		}
 	};
 	
 	module.realTestActivate = function (req, res, next){
@@ -229,7 +295,7 @@ module.exports = function (settings, dataaccess){
 			
 		} else {
 			
-			if (sas.actionState == ACTION_NONE){
+			if (sas.actionState == ACTION_REAL_TEST_READY){
 				
 				useTLC(function(err){
 					
@@ -258,7 +324,7 @@ module.exports = function (settings, dataaccess){
 									WSConn.MD.send(message);
 									
 								});
-								
+								//change hook///////////////////////////////
 								//redirect MD message to UI
 								WSConn.MD.on('message', function(message) {
 									//var MDmsg = JSON.parse(message);
@@ -292,12 +358,10 @@ module.exports = function (settings, dataaccess){
 										if(data.name == "EMG"){
 											data.output = sas.TLCActionState;
 											uploadEMGToTLC(data);
-											//sendChannelValuesToUI(data);
 										}
 										if(data.name == "ACC"){
 											data.output = null;
 											uploadACCToMD(data);
-											//sendChannelValuesToUI(data);
 										}
 								};
 								
@@ -322,18 +386,21 @@ module.exports = function (settings, dataaccess){
 				clearInterval(sas.TLCStateChangeID); 
 				sas.TLCActionState = -1;
 				
-				sas.samplerActionFunction = null;
-				sas.actionState = ACTION_NONE;
+				sas.samplerActionFunction = function (data){
+									
+						if(data.name == "ACC"){
+							data.output = null;
+							uploadACCToMD(data);
+						}
+				};
+				sas.actionState = ACTION_REAL_TEST_READY;
 				
 				if(WSConn.TLC){
 					WSConn.TLC.close();
 					WSConn.TLC = null;
 				}
-				if(WSConn.MD){
-					WSConn.MD.close();
-					WSConn.MD = null;
-				}
 				res.send(JSON.stringify({"result": "Real Test stop success"}));
+				
 			} else {
 				res.status(500).send('Server resource claimed by another action');
 			}
@@ -726,7 +793,7 @@ module.exports = function (settings, dataaccess){
 		
 		var data = JSON.parse(message);
 		
-		if(sas.actionState == ACTION_REAL_TEST){
+		if(sas.actionState == ACTION_REAL_TEST || sas.actionState == ACTION_REAL_TEST_CALIBRATE){
 			sas.samplerActionFunction(data); //didnt add test condition
 			
 		} else if(sas.actionState == ACTION_RECORD || sas.actionState == ACTION_TEST){
@@ -760,9 +827,20 @@ module.exports = function (settings, dataaccess){
 	};
 	
 	function clearSAS(){
+		stopUIAction();
+		sas.samplerActionFunction = null;
 		
 		if (sas.actionState != ACTION_NONE && WSConn.sampler.clients.length > 0){
 			stopSampler();
+		}
+		
+		if(WSConn.TLC){
+			WSConn.TLC.close();
+			WSConn.TLC = null;
+		}
+		if(WSConn.MD){
+			WSConn.MD.close();
+			WSConn.MD = null;
 		}
 		
 		clearInterval(sas.TLCStateChangeID);
@@ -859,14 +937,15 @@ module.exports = function (settings, dataaccess){
 	};
 	
 	function stopUIAction(){
-		
-		sas.UIClients[sas.sysClientID].send(JSON.stringify({"command":"stop"}), function(err){ 
-			//error sending websocket client  info
-			if (err){
-				console.log("Cannot send commands to UI client. Error: " + err);
-				
-			}
-		});
+		if(sas.UIClients[sas.sysClientID]){
+			sas.UIClients[sas.sysClientID].send(JSON.stringify({"command":"stop"}), function(err){ 
+				//error sending websocket client  info
+				if (err){
+					console.log("Cannot send commands to UI client. Error: " + err);
+					
+				}
+			});
+		}
 	};
 	
 	//wrapper to establish connection to the TLC websocket server and send request
@@ -902,11 +981,19 @@ module.exports = function (settings, dataaccess){
 						sas.actionState = ACTION_NONE;
 						
 						console.log("current TLC test action stopped");
+					} else if(sas.actionState == ACTION_READ_TEST){
+						stopUIAction();
+						stopSampler();
+						clearInterval(sas.TLCStateChangeID);
+						sas.TLCActionState = -1;
+						sas.samplerActionFunction = null;
+						sas.actionState = ACTION_READ_TEST_READY;
 					}
 					
-					console.log("Error with connection to the TLC. " + err);
-					WSConn.TLC.close();//test this
+					WSConn.TLC.close();
 					WSConn.TLC = null;
+					
+					console.log("Error with connection to the TLC. " + err);
 				});
 				
 				callback(null);
@@ -915,23 +1002,17 @@ module.exports = function (settings, dataaccess){
 			//this will never initially be run
 			WSConn.TLC.on('close', function(message) {
 				if (sas.actionState == ACTION_TEST || sas.actionState == ACTION_REAL_TEST ){
+					
 					stopUIAction();
-					stopSampler();
+					if (sas.actionState != ACTION_NONE && WSConn.sampler.clients.length > 0){
+						stopSampler();
+					}
 					clearInterval(sas.TLCStateChangeID);
 					sas.TLCActionState = -1;
 					sas.samplerActionFunction = null;
 					sas.actionState = ACTION_NONE;
 					
 					console.log("current TLC test action stopped");
-				}
-				
-				if(WSConn.TLC){
-					WSConn.TLC.close();
-					WSConn.TLC = null;
-				}
-				if(WSConn.MD){
-					WSConn.MD.close();
-					WSConn.MD = null;
 				}
 				console.log("Connection to the TLC closed. Msg: " + message);
 			});
@@ -952,8 +1033,15 @@ module.exports = function (settings, dataaccess){
 			WSConn.MD.on('error', function(err) {
 				
 				console.log("Error with connection to the Motion Detector. " + err);
+				
+				//clearSAS will be called handling all closings and reinitializations
+				WSConn.UI.clients.forEach(function each(client) {
+					clearSAS();
+					client.close();
+				});
 				WSConn.MD.close();
 				WSConn.MD = null;
+				
 				callback(err);
 			});
 			
@@ -961,21 +1049,17 @@ module.exports = function (settings, dataaccess){
 				console.log("Connection to the Motion Detector established");
 				
 				WSConn.MD.on('error', function(err) {
-					if (sas.actionState == ACTION_REAL_TEST){
-						
-						stopUIAction();
-						stopSampler();
-						
-						sas.samplerActionFunction = null;
-						sas.actionState = ACTION_NONE;
-						
+					if (sas.actionState == ACTION_REAL_TEST || sas.actionState == ACTION_REAL_TEST_CALIBRATE || sas.actionState == ACTION_REAL_TEST_READY){
+						//clearSAS will be called handling all closings and reinitializationsx
+						WSConn.UI.clients.forEach(function each(client) {
+							clearSAS();
+							client.close();
+						});
+						WSConn.MD = null;
 						console.log("current Motion Detector test action stopped");
 					}
 					
-					if(WSConn.MD){
-						WSConn.MD.close();
-						WSConn.MD = null;
-					}
+					
 					console.log("Error with connection to the Motion Detector. " + err);
 				});
 				
@@ -985,23 +1069,17 @@ module.exports = function (settings, dataaccess){
 			
 			//this will never initially be run
 			WSConn.MD.on('close', function(message) {
-				if (sas.actionState == ACTION_REAL_TEST){
-					stopUIAction();
-					stopSampler();
-					
-					sas.samplerActionFunction = null;
-					sas.actionState = ACTION_NONE;
+				if (sas.actionState == ACTION_REAL_TEST || sas.actionState == ACTION_REAL_TEST_CALIBRATE || sas.actionState == ACTION_REAL_TEST_READY){
+					//clearSAS will be called handling all closings and reinitializations
+					WSConn.UI.clients.forEach(function each(client) {
+						clearSAS();
+						client.close();
+					});
+					WSConn.MD = null;
 					
 					console.log("current Motion Detector test action stopped");
 				}
-				if(WSConn.TLC){
-					WSConn.TLC.close();
-					WSConn.TLC = null;
-				}
-				if(WSConn.MD){
-					WSConn.MD.close();
-					WSConn.MD = null;
-				}
+				
 				console.log("Connection to the Motion Detector closed. Msg: " + message);
 			});
 		}

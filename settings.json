@@ -3,7 +3,8 @@
 	
 	"UIDataTransferPeriod": 2,
 	"maxChannelNumber": 8,
-	"realTestChannelNum": 5,
+	"defaultChannelNumber": 0,
+	"realTestChannelNumber": 5,
 	
 	"controllerHTTPPort": 9080,
 	"UIWebsocketPort": 9081,
