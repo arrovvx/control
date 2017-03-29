@@ -40,7 +40,11 @@ $(document).ready(function(){
 	var processCommand = function (WSRes){
 		//alert(WSRes);
 		var data = JSON.parse(WSRes.data);
-		$("#display").append(data.output);
+		
+		if (data.name == "MDOutput")
+			$("#display").append(data.output);
+		else
+			$("#keyboard").append(data.output);
 
 		/*if(data.command == "stop"){
 			clearActions();

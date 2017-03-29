@@ -245,24 +245,24 @@ module.exports = function (settings, dataaccess){
 								
 								//rediret TLC message to both UI and MD
 								WSConn.TLC.on('message', function(message) {
-									var TLCmsg = JSON.parse(message);
+									//var TLCmsg = JSON.parse(message);
 									
 									//send TLC output to UI
-									sas.UIClients[sas.sysClientID].send(JSON.stringify({"name" : "TLCOutput", "output": TLCmsg.output}), function(err){ 
+									sas.UIClients[sas.sysClientID].send(message, function(err){ 
 										if (err){
 											console.log("Fail to send TLC data to UI. Error: " + err);
 										}
 									});
 									
 									//send TLC output to MD
-									WSConn.MD.send(JSON.stringify({"name" : "TLCOutput", "output": TLCmsg.output}));
+									WSConn.MD.send(message);
 									
 								});
 								
 								//redirect MD message to UI
 								WSConn.MD.on('message', function(message) {
-									var MDmsg = JSON.parse(message);
-									sas.UIClients[sas.sysClientID].send(JSON.stringify({"name" : "MDOutput", "output": MDmsg.output}), function(err){ 
+									//var MDmsg = JSON.parse(message);
+									sas.UIClients[sas.sysClientID].send(message, function(err){ 
 										if (err){
 											console.log("Fail to send Motion Detector data to UI. Error: " + err);
 										}
@@ -271,13 +271,13 @@ module.exports = function (settings, dataaccess){
 								
 								//redirect UI message to Watch
 								WSConn.UI.on('message', function(message) {
-									var UImsg = JSON.parse(message);
+									//var UImsg = JSON.parse(message);
 									
 									if(message.name == "text"){
 										console.log("UI message: " + message);
 									
 										WSConn.watch.clients.forEach(function each(client) {
-											client.send(UImsg, function(err){
+											client.send(message, function(err){
 												
 												if(err){
 													console.log("Cannot send word to Watch. Error: " + err);
@@ -292,12 +292,12 @@ module.exports = function (settings, dataaccess){
 										if(data.name == "EMG"){
 											data.output = sas.TLCActionState;
 											uploadEMGToTLC(data);
-											sendChannelValuesToUI(data);
+											//sendChannelValuesToUI(data);
 										}
 										if(data.name == "ACC"){
 											data.output = null;
 											uploadACCToMD(data);
-											sendChannelValuesToUI(data);
+											//sendChannelValuesToUI(data);
 										}
 								};
 								
@@ -816,7 +816,7 @@ module.exports = function (settings, dataaccess){
 	
 	function uploadACCToMD(data){
 		
-		WSConn.MD.send(JSON.stringify({"name" : "ACC", "input": data.input, "output":data.output, "timestamp": data.timestamp}));
+		WSConn.MD.send(JSON.stringify({"name" : "ACC", "input": data.input, "timestamp": data.timestamp}));
 	};
 	
 	function playbackEMG(){
