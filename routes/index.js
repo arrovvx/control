@@ -425,17 +425,27 @@ module.exports = function (settings, dataaccess){
 					
 					sas.samplerActionFunction = function (data){
 						if(data.name == "EMG"){
+							data.output = sas.TLCActionState;
 							uploadEMGToDB(data);
 							sendChannelValuesToUI(data);
 						}
 					};
 					
+					//stop training timer
+					sas.TLCActionState = 0;
+					sas.TLCStateChangeID = setInterval( function(){
+						sas.TLCActionState = (sas.TLCActionState + 1) % settings.TLCStateNum;
+					}, settings.TLCStateChangePeriod);
+					
+					//start sampler and return success
 					startSampler();
 					sas.actionState = ACTION_RECORD;
 					res.send(JSON.stringify({"result": "record start success"}));
 				} else if(sas.actionState == ACTION_RECORD){
-					
 					stopSampler();
+					clearInterval(sas.TLCStateChangeID);
+				
+					sas.TLCActionState = -1;
 					sas.samplerActionFunction = null;
 					sas.actionState = ACTION_NONE;
 					res.send(JSON.stringify({"result": "record stop success"}));
@@ -878,7 +888,7 @@ module.exports = function (settings, dataaccess){
 	function uploadEMGToDB(data){
 		//console.log(signalGroupID);
 		
-		dataaccess.insertNewSignalTmp(sas, 1, data.input, function(err){ //data.output
+		dataaccess.insertNewSignalTmp(sas, data.output, data.input, function(err){ //data.output
 			
 			if(err){
 				console.log("Cannot insert new signal to database. Error: " + err);

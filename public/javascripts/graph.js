@@ -216,7 +216,14 @@ $(document).ready(function(){
 						ws.onmessage = null;
 						clearInterval(schedulerID);
 					} else {
-						ws.onmessage = plotWSRes;
+						ws.onmessage = function(WSRes){
+							var data = JSON.parse(WSRes.data);
+							
+							$("#output").html(convertTLCRes(data.output));
+							plotWSRes(WSRes);
+							
+						}
+						plotWSRes;
 						schedulerID = setInterval( renderPlots, renderPeriod);
 					}
 				},
