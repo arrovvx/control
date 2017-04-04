@@ -192,25 +192,13 @@ $(document).ready(function(){
 	selectedKeys = keyboard
 	$("#keyboard").html(makeColumn(selectedKeys));
 	$("#slider").html(makeSliderCol(selectKeys(selectedKeys, 0, selectLevel)));
-	
+	console.log("hoho");
 	//initialize the UI variables and interface
-	$.ajax({
-		type: "POST",
-		url: "/realTestCalibrate",
-		contentType: 'application/json',
-	   //data: {format: 'json'},
-		success: function(data, status, xhr) {
-			$("#start").toggleClass('btn-default');
-			WSConnect();
-			activateUI();	
+	$("#start").toggleClass('btn-default');
+	WSConnect();
+	activateUI();	
 
-			curserTimeID = setInterval('cursorAnimation()', 600);			
-		},
-		error: function(xhr, status, error) {
-			alert("Error calibrating Motion Detector! Server response: " + xhr.responseText);
-			window.location.href = "/";
-		}
-	});
+	curserTimeID = setInterval('cursorAnimation()', 600);
 	
 	//function called to connect to the websocket on the server end
 	function WSConnect(){
@@ -222,10 +210,11 @@ $(document).ready(function(){
 		if ("WebSocket" in window) {
 			
 			//create connection
-			ws = new WebSocket("ws://" + serverURL + ":" + wsPort + "/");
+			ws = new WebSocket("ws://" + serverURL + ":" + 9081 + "/");
 
 			//this function be deleted
 			ws.onopen = function(){
+				$("#start").toggleClass('btn-default');
 				ws.send("Notice me senpai");
 			};
 			
@@ -250,7 +239,7 @@ $(document).ready(function(){
 	var processCommand = function (WSRes){
 		//alert(WSRes);
 		var data = JSON.parse(WSRes.data);
-		
+		console.log("received" + JSON.stringify(data));
 		if (data.name == "MDOutput"){
 			velocity = data.output;
 			if(pressed == 0){
@@ -264,7 +253,7 @@ $(document).ready(function(){
 					//this is the slider
 				}
 			}
-		}else (data.name == "TLCOutput") {
+		} else if (data.name == "TLCOutput") {
 			state = data.output;
 			
 			if (state == 0){
@@ -273,22 +262,27 @@ $(document).ready(function(){
 					var id = "#level1-".concat(pressed - 1);
 					$(id).css({"background-color": "#FFFFFF"});
 					
-					selectedKeys = selectKeys(selectedKeys, pressed - 1, selectLevel);
-					selectLevel -= 1;
 					
-					if(selectLevel == 1){
+					if(selectLevel == 0){
+						
+					} else if(selectLevel == 1){
+						
 						message = message.concat(selectedKeys[pressed - 1]);
 						$('#message').html(message);
-						$("#keyboard").html(makeColumn2(selectedKeys));
-						selectedKeys = keyboard
+						//$("#keyboard").html(makeColumn2(selectedKeys));
+						selectedKeys = keyboard;
 						$("#keyboard").html(makeColumn(selectedKeys));
 						selectLevel = 3;
 						
 					}else if(selectLevel == 2){
-						$("#keyboard").html(makeColumn2(selectedKeys));
+						selectedKeys = selectKeys(selectedKeys, pressed - 1, selectLevel);
+						selectLevel -= 1;
+						$("#keyboard").html(makeColumn3(selectedKeys));
 						
 					}else if (selectLevel == 3) {
-						$("#keyboard").html(makeColumn3(selectedKeys));
+						selectedKeys = selectKeys(selectedKeys, pressed - 1, selectLevel);
+						selectLevel -= 1;
+						$("#keyboard").html(makeColumn2(selectedKeys));
 						
 					}
 					

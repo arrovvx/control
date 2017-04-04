@@ -24,7 +24,7 @@ module.exports = function (settings, dataaccess){
 		sampler: new ws({port:(settings.SamplerWebsocketPort)}),
 		TLC: null,//new wsClient('ws://' + settings.TLCIP + ':' + settings.TLCWebsocketPort + '/')
 		MD: null,
-		watch: new ws({port:(settings.watchWebsocketPort)})
+		watch: null//new ws({port:(settings.watchWebsocketPort)})
 	};
 	
 	//define server action states (sas)
@@ -96,9 +96,9 @@ module.exports = function (settings, dataaccess){
 		
 	});
 	
-	WSConn.watch.on('connection', function chat(wsWatch){
+	/*WSConn.watch.on('connection', function chat(wsWatch){
 		console.log('Watch client connected');
-		watchClientNum += 1;
+		sas.watchClientNum += 1;
 		
 		wsSample.on('close', function close() {
 			
@@ -113,7 +113,7 @@ module.exports = function (settings, dataaccess){
 			console.log("connection to watch closed");
 		});
 		
-	});
+	});*/
 	
 	module.index = function(req, res, next){
 			res.render('index');
@@ -235,7 +235,7 @@ module.exports = function (settings, dataaccess){
 		} else {
 			
 			if (sas.actionState == ACTION_NONE){
-				
+				console.log("before use MD");
 				useMD(function(err){
 					
 					if(err){
@@ -250,7 +250,8 @@ module.exports = function (settings, dataaccess){
 							
 							//only return good if there is done status
 							if(MDmsg.name == "MDStatus" && MDmsg.output == "done"){
-								stopSampler();
+								console.log("qwe");
+								//stopSampler();
 								
 								sas.actionState = ACTION_REAL_TEST_READY;
 								
@@ -295,7 +296,7 @@ module.exports = function (settings, dataaccess){
 			
 		} else {
 			
-			if (sas.actionState == ACTION_REAL_TEST_READY){
+			if (sas.actionState == ACTION_NONE){
 				
 				useTLC(function(err){
 					
@@ -311,8 +312,8 @@ module.exports = function (settings, dataaccess){
 								
 								//rediret TLC message to both UI and MD
 								WSConn.TLC.on('message', function(message) {
-									//var TLCmsg = JSON.parse(message);
-									
+									var TLCmsg = JSON.parse(message);
+									//console.log("TLC" + message);
 									//send TLC output to UI
 									sas.UIClients[sas.sysClientID].send(message, function(err){ 
 										if (err){
@@ -903,8 +904,10 @@ module.exports = function (settings, dataaccess){
 	};
 	
 	function uploadACCToMD(data){
-		
-		WSConn.MD.send(JSON.stringify({"name" : "ACC", "input": data.input, "timestamp": data.timestamp}));
+		if(WSConn.MD)
+			WSConn.MD.send(JSON.stringify({"name" : "ACC", "input": data.input, "timestamp": data.timestamp}));
+		else
+			console.log("MD not connected");
 	};
 	
 	function playbackEMG(){
@@ -1061,6 +1064,7 @@ module.exports = function (settings, dataaccess){
 				WSConn.MD.on('error', function(err) {
 					if (sas.actionState == ACTION_REAL_TEST || sas.actionState == ACTION_REAL_TEST_CALIBRATE || sas.actionState == ACTION_REAL_TEST_READY){
 						//clearSAS will be called handling all closings and reinitializationsx
+						stopSampler();
 						WSConn.UI.clients.forEach(function each(client) {
 							clearSAS();
 							client.close();
@@ -1069,17 +1073,17 @@ module.exports = function (settings, dataaccess){
 						console.log("current Motion Detector test action stopped");
 					}
 					
-					
 					console.log("Error with connection to the Motion Detector. " + err);
 				});
 				
 				callback(null);
 			});
 			
-			
 			//this will never initially be run
 			WSConn.MD.on('close', function(message) {
 				if (sas.actionState == ACTION_REAL_TEST || sas.actionState == ACTION_REAL_TEST_CALIBRATE || sas.actionState == ACTION_REAL_TEST_READY){
+					stopSampler();
+					
 					//clearSAS will be called handling all closings and reinitializations
 					WSConn.UI.clients.forEach(function each(client) {
 						clearSAS();
