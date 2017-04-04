@@ -2,6 +2,8 @@
 <html>
 
 <head>
+
+	
 	<!-- Latest compiled and minified CSS -->
 	<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css" integrity="sha384-1q8mTJOASx8j1Au+a5WDVnPi2lkFfwwEAa8hDDdjZlpLegxhjVME1fgjWPGmkzs7" crossorigin="anonymous">
 
@@ -11,20 +13,76 @@
 	<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.2.4/jquery.min.js"></script>
 	<script src="http://canvasjs.com/assets/script/canvasjs.min.js"></script>
 	
-	<script src="javascripts/test.js"></script>
+	<style>
+		/* centered columns styles */
+		#display {
+			text-align:center;
+			font-size: 80px;
+			margin-top:4em;
+			margin-bottom:0;
+			height: 120px;
+		}
+		#keyboard {
+			text-align:center;
+			font-size: 40px;
+			height: 100px;
+			margin-left: 10px;
+			margin-right: 30px;
+		}
+		#slider {
+			text-align:center;
+			font-size: 60px;
+			height: 50px;
+			margin: auto 1em;
+		}
+		#slider-box {
+			margin: auto 1em;
+		}
+		.slider-col {
+			text-align:center;
+			padding: 0;
+			width:55px
+		}
+		.level3{
+			padding: 0;
+			height: 55px;
+			width: 55px;
+		
+		}
+		.level22{
+			padding: 0;
+		
+		}
+		.level1{
+			padding: 0;
+			border-style: solid;
+		}
+	</style>
+	
+	<script src="test.js"></script>
 	
 </head>
 <body>
-		<input type="hidden" id="WSPort" name="WSPort" value="<%= WSPort %>">
+		<input type="hidden" id="WSPort" name="WSPort" value="9082">
 		<div id="mainTable" class="row" style="margin-left:5px;">
-		
 				
-				<div id="display" style="margin-top:2em;margin-bottom:2em;"></div>
+				<div id="display">
+					<div id="displayLevel1">
+						<span id="message"></span><span id="cursor">|</span>
+					</div>
+				</div>
+				<hr>
+				<div id="keyboard" style="">
 				
-				<div id="keyboard" style="margin-top:2em;margin-bottom:2em;"></div>
-				
+				</div>
+				<hr>
+				<div id="slider" style="">
+				ll
+				</div>
+				<br>
+				<hr>
 				<div id="controlMenu" class="col-md-12"  style="margin-bottom:2em;">
-					<button id="start" type="button" class="btn btn-lg col-md-1 controlButton" style="color: black;">Start</button>
+					<button id="start" type="button" class="btn btn-default btn-lg col-sm-3 col-md-2 controlButton" style="color: black;">Start</button>
 				</div>
 		</div>
 	

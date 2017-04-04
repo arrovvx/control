@@ -215,8 +215,19 @@ $(document).ready(function(){
 		}
 		
 		if(stage == 0){
+			var asd = 1;
+			id = "#level1-".concat(asd - 1);
 			
-			$( "#level1-0" ).css({"background-color": "#aa0000"});
+			$(id).css({"background-color": "#aa0000"});
+			$(id).animate({opacity: 0},
+							{duration: 200,
+							complete:function(){
+								$( id ).css({"background-color": "#FFFFFF"});
+								$( id ).css({opacity: 1});
+							}
+						});
+			
+			//$( "#level1-0" ).animate({"background-color": "#aa0000"}, {queue: false, duration: 300});//animate({"background-color": "#aa0000"});
 		} else if(stage == 1){
 			selectedKeys = selectKeys(selectedKeys, 0, selectLevel);
 			selectLevel -= 1;
