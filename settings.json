@@ -1,5 +1,5 @@
 {
-	"_comment": "Please edit this accordingly on different systems 192.168.99.101 dockerhost",
+	"_comment": "Please edit this accordingly on different systems 192.168.99.101 ",
 	
 	"UIDataTransferPeriod": 2,
 	"maxChannelNumber": 8,
