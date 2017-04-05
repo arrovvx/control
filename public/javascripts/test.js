@@ -12,6 +12,7 @@ var keyboard = [
 var selectedKeys;
 var pressed = 0;
 var MDThreshold = 9;
+var clearFlag = 0;
 
 var ws = null;
 var wsID = null;
@@ -261,61 +262,78 @@ var processCommand = function (WSRes){
 	} else if (data.name == "TLCOutput") {
 		state = data.output;
 		if (state == 0){
-			//clear output and process key pressed, anime, if nothing press do nothing
-			if(pressed != 0){
-				var id = "#level1-".concat(pressed - 1);
-				$(id).css({"background-color": "#FFFFFF"});
-				
-				if(selectLevel == 1){
-					message = message.concat(selectedKeys[pressed - 1]);
-					$('#message').html(message);
+			if (clearFlag == 1){
+				selectedKeys = keyboard
+				$("#keyboard").html(makeColumn(selectedKeys));
+				selectLevel = 3;
+				clearFlag = 0;
+			} else {
+				//clear output and process key pressed, anime, if nothing press do nothing
+				if(pressed != 0){
+					var id = "#level1-".concat(pressed - 1);
+					$(id).css({"background-color": "#FFFFFF"});
 					
-					ws.send(JSON.stringify({"command":"update", "message": message})); //send to watch
-					
-					selectedKeys = keyboard
-					$("#keyboard").html(makeColumn(selectedKeys));
-					selectLevel = 3;
-					
-				}else if(selectLevel == 2){
-					if (selectedKeys.length == 2){
+					if(selectLevel == 1){
+						message = message.concat(selectedKeys[pressed - 1]);
+						$('#message').html(message);
 						
-						if(pressed <= 2){
-							if(pressed == 1){
-								message = message.concat(" ");
+						ws.send(JSON.stringify({"command":"update", "message": message})); //send to watch
+						
+						selectedKeys = keyboard
+						$("#keyboard").html(makeColumn(selectedKeys));
+						selectLevel = 3;
+						
+					}else if(selectLevel == 2){
+						if (selectedKeys.length == 2){
+							
+							if(pressed <= 2){
+								if(pressed == 1){
+									message = message.concat(" ");
+									$('#message').html(message);
+								} else if (pressed == 2){
+									message = message.slice(0, -1);
+								}
+								
 								$('#message').html(message);
-							} else if (pressed == 2){
-								message = message.slice(0, -1);
+								ws.send(JSON.stringify({"command":"update", "message": message})); //send to watch
+								
+								selectedKeys = keyboard
+								$("#keyboard").html(makeColumn(selectedKeys));
+								selectLevel = 3;
 							}
+						} else {
+							selectedKeys = selectKeys(selectedKeys, pressed - 1, selectLevel);
+							selectLevel -= 1;
 							
-							$('#message').html(message);
-							ws.send(JSON.stringify({"command":"update", "message": message})); //send to watch
-							
-							selectedKeys = keyboard
-							$("#keyboard").html(makeColumn(selectedKeys));
-							selectLevel = 3;
+							$("#keyboard").html(makeColumn3(selectedKeys));
 						}
-					} else {
+						
+					}else if (selectLevel == 3) {
 						selectedKeys = selectKeys(selectedKeys, pressed - 1, selectLevel);
 						selectLevel -= 1;
+						$("#keyboard").html(makeColumn2(selectedKeys));
 						
-						$("#keyboard").html(makeColumn3(selectedKeys));
 					}
 					
-				}else if (selectLevel == 3) {
-					selectedKeys = selectKeys(selectedKeys, pressed - 1, selectLevel);
-					selectLevel -= 1;
-					$("#keyboard").html(makeColumn2(selectedKeys));
-					
+					pressed = 0; //simply reset the pressed value to 0
 				}
-				
-				pressed = state; //simply reset the pressed value to 0
 			}
+			
 		} else {
-			//store key press, if another key was pressed do nothing
 			if(pressed == 0){
-				var id = "#level1-".concat(state - 1);
-				$(id).css({"background-color": "#aa0000"});
-				pressed = state;
+				//clear signal
+				if (state == 5){ 
+					for(var i = 0; i < 4; i++){
+						var id = "#level1-".concat(i);
+						$(id).css({"background-color": "#d9534f"});
+						clearFlag = 1;
+					}
+				} else {
+					//store key press, if another key was pressed do nothing
+					var id = "#level1-".concat(state - 1);
+					$(id).css({"background-color": "#337ab7"});
+					pressed = state;
+				}
 			}
 		}
 	}
