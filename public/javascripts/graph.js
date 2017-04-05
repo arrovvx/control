@@ -246,6 +246,8 @@ $(document).ready(function(){
 				return "Ring";
 			} else if(data == 4){
 				return "Pinky";
+			} else if(data == 5){
+				return "Fist";
 			}
 		}
 		

@@ -23,8 +23,7 @@ module.exports = function (settings, dataaccess){
 		UI: new ws({port:(settings.UIWebsocketPort)}),
 		sampler: new ws({port:(settings.SamplerWebsocketPort)}),
 		TLC: null,//new wsClient('ws://' + settings.TLCIP + ':' + settings.TLCWebsocketPort + '/')
-		MD: null,
-		watch: new ws({port:(settings.watchWebsocketPort)})
+		MD: null
 	};
 	
 	//define server action states (sas)
@@ -84,7 +83,7 @@ module.exports = function (settings, dataaccess){
 		
 		wsSample.on('close', function close() {
 			
-			if (sas.actionState == ACTION_RECORD || sas.actionState == ACTION_TEST || sas.actionState == ACTION_PERFORMANCE){
+			if (sas.actionState == ACTION_REAL_TEST || sas.actionState == ACTION_RECORD || sas.actionState == ACTION_TEST || sas.actionState == ACTION_PERFORMANCE){
 				sas.actionState = ACTION_NONE;
 				sas.samplerActionFunction = null;
 				stopUIAction();
@@ -95,7 +94,7 @@ module.exports = function (settings, dataaccess){
 		});
 		
 	});
-	
+	/*
 	WSConn.watch.on('connection', function chat(wsWatch){
 		console.log('Watch client connected');
 		watchClientNum += 1;
@@ -113,7 +112,7 @@ module.exports = function (settings, dataaccess){
 			console.log("connection to watch closed");
 		});
 		
-	});
+	});*/
 	
 	module.index = function(req, res, next){
 			res.render('index');
@@ -215,7 +214,6 @@ module.exports = function (settings, dataaccess){
 			res.status(500).send('System service in use');
 			
 		} else {
-			
 			sas.actionState = ACTION_NONE;
 			
 			//prepare 5 channel test
@@ -224,63 +222,6 @@ module.exports = function (settings, dataaccess){
 			
 			res.render('test', { WSPort: settings.UIWebsocketPort });
 		} 
-	};
-	
-	module.realTestCalibrate = function (req, res, next){
-		
-		//if no samplers are connected
-		if (WSConn.sampler.clients.length == 0){
-			res.status(500).send('No samplers are connected');
-			
-		} else {
-			
-			if (sas.actionState == ACTION_NONE){
-				
-				useMD(function(err){
-					
-					if(err){
-						res.status(500).send('Cannot establish connection to the Motion Detector. ' + err);
-					} else {
-						
-						sas.actionState = ACTION_REAL_TEST_CALIBRATE;
-						
-						//setting the listener function
-						sas.realTestMDListener = function(message) {
-							var MDmsg = JSON.parse(message);
-							
-							//only return good if there is done status
-							if(MDmsg.name == "MDStatus" && MDmsg.output == "done"){
-								stopSampler();
-								
-								sas.actionState = ACTION_REAL_TEST_READY;
-								
-								//double check for error
-								if(sas.realTestMDListener)
-									res.send(JSON.stringify({"result": "Real Test Motion Detector Calibration Success"}));
-								
-								WSConn.MD.removeListener('message', sas.realTestMDListener);
-								sas.realTestMDListener = null;
-							}
-						};
-						
-						//redirect MD message to UI
-						WSConn.MD.on('message', sas.realTestMDListener);
-						
-						sas.samplerActionFunction = function (data){
-								if(data.name == "ACC"){
-									data.output = null;
-									uploadACCToMD(data);
-								}
-						};
-						
-						startSampler(); 
-					}
-				});
-				
-			} else {
-				res.status(500).send('Server resource claimed by another action');
-			}
-		}
 	};
 	
 	module.realTestActivate = function (req, res, next){
@@ -295,7 +236,7 @@ module.exports = function (settings, dataaccess){
 			
 		} else {
 			
-			if (sas.actionState == ACTION_REAL_TEST_READY){
+			if (sas.actionState == ACTION_NONE){
 				
 				useTLC(function(err){
 					
@@ -324,7 +265,7 @@ module.exports = function (settings, dataaccess){
 									WSConn.MD.send(message);
 									
 								});
-								//change hook///////////////////////////////
+								
 								//redirect MD message to UI
 								WSConn.MD.on('message', function(message) {
 									//var MDmsg = JSON.parse(message);
@@ -336,7 +277,7 @@ module.exports = function (settings, dataaccess){
 								});
 								
 								//redirect UI message to Watch
-								WSConn.UI.on('message', function(message) {
+								/*WSConn.UI.on('message', function(message) {
 									//var UImsg = JSON.parse(message);
 									
 									if(message.name == "text"){
@@ -351,7 +292,7 @@ module.exports = function (settings, dataaccess){
 											});
 										});
 									}
-								});
+								});*/
 								
 								sas.samplerActionFunction = function (data){
 									
@@ -381,26 +322,21 @@ module.exports = function (settings, dataaccess){
 			} else if(sas.actionState == ACTION_REAL_TEST){
 				
 				stopSampler();
-				
-				//may not be needed
 				clearInterval(sas.TLCStateChangeID); 
-				sas.TLCActionState = -1;
 				
-				sas.samplerActionFunction = function (data){
-									
-						if(data.name == "ACC"){
-							data.output = null;
-							uploadACCToMD(data);
-						}
-				};
-				sas.actionState = ACTION_REAL_TEST_READY;
+				sas.TLCActionState = -1;
+				sas.samplerActionFunction = null;
+				sas.actionState = ACTION_NONE;
 				
 				if(WSConn.TLC){
 					WSConn.TLC.close();
 					WSConn.TLC = null;
 				}
+				if(WSConn.MD){
+					WSConn.MD.close();
+					WSConn.MD = null;
+				}
 				res.send(JSON.stringify({"result": "Real Test stop success"}));
-				
 			} else {
 				res.status(500).send('Server resource claimed by another action');
 			}
@@ -991,13 +927,14 @@ module.exports = function (settings, dataaccess){
 						sas.actionState = ACTION_NONE;
 						
 						console.log("current TLC test action stopped");
-					} else if(sas.actionState == ACTION_READ_TEST){
+					} else if(sas.actionState == ACTION_REAL_TEST){
+						
 						stopUIAction();
 						stopSampler();
 						clearInterval(sas.TLCStateChangeID);
 						sas.TLCActionState = -1;
 						sas.samplerActionFunction = null;
-						sas.actionState = ACTION_READ_TEST_READY;
+						sas.actionState = ACTION_NONE;
 					}
 					
 					WSConn.TLC.close();
@@ -1059,10 +996,11 @@ module.exports = function (settings, dataaccess){
 				console.log("Connection to the Motion Detector established");
 				
 				WSConn.MD.on('error', function(err) {
-					if (sas.actionState == ACTION_REAL_TEST || sas.actionState == ACTION_REAL_TEST_CALIBRATE || sas.actionState == ACTION_REAL_TEST_READY){
+					if (sas.actionState == ACTION_REAL_TEST){
 						//clearSAS will be called handling all closings and reinitializationsx
+						clearSAS();
 						WSConn.UI.clients.forEach(function each(client) {
-							clearSAS();
+							
 							client.close();
 						});
 						WSConn.MD = null;
@@ -1079,10 +1017,11 @@ module.exports = function (settings, dataaccess){
 			
 			//this will never initially be run
 			WSConn.MD.on('close', function(message) {
-				if (sas.actionState == ACTION_REAL_TEST || sas.actionState == ACTION_REAL_TEST_CALIBRATE || sas.actionState == ACTION_REAL_TEST_READY){
+				if (sas.actionState == ACTION_REAL_TEST){
+					
 					//clearSAS will be called handling all closings and reinitializations
+					clearSAS();
 					WSConn.UI.clients.forEach(function each(client) {
-						clearSAS();
 						client.close();
 					});
 					WSConn.MD = null;

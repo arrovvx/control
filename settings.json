@@ -19,7 +19,7 @@
 	"MDIP": "127.0.0.1",
 	"MDWebsocketPort": 8891,
 	
-	"databaseIP": "192.168.99.101",
+	"databaseIP": "192.168.99.100",
 	"databasePort": 27017,
 	"databaseName": "EMG",
 	"mongoRetryPeriod" : 1000,

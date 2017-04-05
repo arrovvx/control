@@ -11,7 +11,10 @@ var keyboard = [
 '"',"'",'[',']','(',')','space','delete'];
 var selectedKeys;
 var pressed = 0;
-var MDThreshold = 10;
+var MDThreshold = 9;
+
+var ws = null;
+var wsID = null;
 
 function mini(x, y){
 	if (x > y)
@@ -184,174 +187,168 @@ function sendText(){
 						});
 };
 
+//function called to connect to the websocket on the server end
+function WSConnect(){
+	var serverURL = window.location.hostname;
+	var serverPort = window.location.port;
+	var wsPort = $("#WSPort").val();	
+
+	//check if websocket is supported
+	if ("WebSocket" in window) {
+		
+		//create connection
+		ws = new WebSocket("ws://" + serverURL + ":" + wsPort + "/");
+
+		//this function be deleted
+		ws.onopen = function(){
+			ws.send("Notice me senpai");
+		};
+		
+		ws.onmessage = function (serverRes){
+			var data = JSON.parse(serverRes.data);
+			if (wsID == null) wsID = data.ID;
+			ws.onmessage = null;
+		};			
+
+		ws.onclose = function() { 
+		
+			ws = null;					
+			console.log("Connection is closed...");	
+			alert("closed");
+			window.location.href = "/";
+		};
+	} else {
+		alert("WebSocket NOT supported");
+		window.location.href = "/";
+	}
+};	
+
+//make sure button is pressed up
+if(actionState){
+	$("#" + actionState).toggleClass('btn-default');
+	actionState = null;
+}
+
+var processCommand = function (WSRes){
+	//alert(WSRes);
+	var data = JSON.parse(WSRes.data);
+	console.log(WSRes.data);
+	if(data.command && data.command == "stop"){
+		message = "";
+		selectedKeys = keyboard;
+		$("#keyboard").html(makeColumn(selectedKeys));
+		selectLevel = 3;
+		$("#start").toggleClass('btn-default');
+		ws.onmessage = null;
+		$("#start").html( "Start");
+			
+	} else if (data.name == "MDOutput"){
+		velocity = data.output;
+		if(pressed == 0){
+			if(velocity > MDThreshold){
+				clearText();
+				message = "";
+				
+				selectedKeys = keyboard
+				$("#keyboard").html(makeColumn(selectedKeys));
+				selectLevel = 3;
+			} else if (velocity < -MDThreshold){
+				sendText();
+				message = "";
+				
+				selectedKeys = keyboard
+				$("#keyboard").html(makeColumn(selectedKeys));
+				selectLevel = 3;
+			}
+		}
+	} else if (data.name == "TLCOutput") {
+		state = data.output;
+		if (state == 0){
+			//clear output and process key pressed, anime, if nothing press do nothing
+			if(pressed != 0){
+				var id = "#level1-".concat(pressed - 1);
+				$(id).css({"background-color": "#FFFFFF"});
+				
+				if(selectLevel == 1){
+					message = message.concat(selectedKeys[pressed - 1]);
+					$('#message').html(message);
+					
+					selectedKeys = keyboard
+					$("#keyboard").html(makeColumn(selectedKeys));
+					selectLevel = 3;
+					
+				}else if(selectLevel == 2){
+					selectedKeys = selectKeys(selectedKeys, pressed - 1, selectLevel);
+					selectLevel -= 1;
+					$("#keyboard").html(makeColumn3(selectedKeys));
+					
+				}else if (selectLevel == 3) {
+					selectedKeys = selectKeys(selectedKeys, pressed - 1, selectLevel);
+					selectLevel -= 1;
+					$("#keyboard").html(makeColumn2(selectedKeys));
+					
+				}
+				
+				pressed = state; //simply reset the pressed value to 0
+			}
+		} else {
+			//store key press, if another key was pressed do nothing
+			if(pressed == 0){
+				var id = "#level1-".concat(state - 1);
+				$(id).css({"background-color": "#aa0000"});
+				pressed = state;
+			}
+		}
+	}
+};
+
+//function to activate the UI buttons
+function activateUI(){
+	//start button handler, tell the server to start the test scenario
+	$( "#start" ).click(function() {
+		selectedKeys = keyboard;
+		$("#keyboard").html(makeColumn(selectedKeys));
+		selectLevel = 3;
+		
+		$.ajax({
+			type: "POST",
+			url: "/realTestActivate",
+			contentType: 'application/json',
+			data: JSON.stringify({"ID": wsID}),
+			success: function(data, status, xhr) {
+				if (ws.onmessage){
+					ws.onmessage = null;
+					$("#start").toggleClass('btn-default');
+					$("#start").html( "Start");
+				} else {
+					ws.onmessage = processCommand;
+					$("#start").toggleClass('btn-default');
+					$("#start").html( "Stop");
+				}
+			},
+			
+			error: function(xhr, status, error) {
+				
+				alert("Error in Real Test! Server response: " + xhr.responseText); //error ___ is still active
+				window.location.href = "/";
+			}
+		});
+	});
+};
+
 $(document).ready(function(){
 
-	var ws = null;
-	var wsID = null;
+	
 	
 	selectedKeys = keyboard
 	$("#keyboard").html(makeColumn(selectedKeys));
 	$("#slider").html(makeSliderCol(selectKeys(selectedKeys, 0, selectLevel)));
 	
-	//initialize the UI variables and interface
-	$.ajax({
-		type: "POST",
-		url: "/realTestCalibrate",
-		contentType: 'application/json',
-	   //data: {format: 'json'},
-		success: function(data, status, xhr) {
-			$("#start").toggleClass('btn-default');
-			WSConnect();
-			activateUI();	
+	WSConnect();
+	activateUI();	
 
-			curserTimeID = setInterval('cursorAnimation()', 600);			
-		},
-		error: function(xhr, status, error) {
-			alert("Error calibrating Motion Detector! Server response: " + xhr.responseText);
-			window.location.href = "/";
-		}
-	});
+	curserTimeID = setInterval('cursorAnimation()', 600);	
 	
-	//function called to connect to the websocket on the server end
-	function WSConnect(){
-		var serverURL = window.location.hostname;
-		var serverPort = window.location.port;
-		var wsPort = $("#WSPort").val();	
-
-		//check if websocket is supported
-		if ("WebSocket" in window) {
-			
-			//create connection
-			ws = new WebSocket("ws://" + serverURL + ":" + wsPort + "/");
-
-			//this function be deleted
-			ws.onopen = function(){
-				ws.send("Notice me senpai");
-			};
-			
-			ws.onmessage = function (serverRes){
-				var data = JSON.parse(serverRes.data);
-				if (wsID == null) wsID = data.ID;
-				ws.onmessage = null;
-			};			
-
-			ws.onclose = function() { 
-			
-				ws = null;					
-				console.log("Connection is closed...");	
-				alert("closed");
-				window.location.href = "/";
-			};
-		} else {
-			alert("WebSocket NOT supported");
-		}
-	};	
 	
-	var processCommand = function (WSRes){
-		//alert(WSRes);
-		var data = JSON.parse(WSRes.data);
-		
-		if (data.name == "MDOutput"){
-			velocity = data.output;
-			if(pressed == 0){
-				if(velocity > MDThreshold){
-					clearText();
-					message = "";
-				} else if (velocity < -MDThreshold){
-					sendText();
-					message = "";
-				} else {
-					//this is the slider
-				}
-			}
-		}else (data.name == "TLCOutput") {
-			state = data.output;
-			
-			if (state == 0){
-				//clear output and process key pressed, anime, if nothing press do nothing
-				if(pressed != 0){
-					var id = "#level1-".concat(pressed - 1);
-					$(id).css({"background-color": "#FFFFFF"});
-					
-					selectedKeys = selectKeys(selectedKeys, pressed - 1, selectLevel);
-					selectLevel -= 1;
-					
-					if(selectLevel == 1){
-						message = message.concat(selectedKeys[pressed - 1]);
-						$('#message').html(message);
-						$("#keyboard").html(makeColumn2(selectedKeys));
-						selectedKeys = keyboard
-						$("#keyboard").html(makeColumn(selectedKeys));
-						selectLevel = 3;
-						
-					}else if(selectLevel == 2){
-						$("#keyboard").html(makeColumn2(selectedKeys));
-						
-					}else if (selectLevel == 3) {
-						$("#keyboard").html(makeColumn3(selectedKeys));
-						
-					}
-					
-					pressed = state; //simply reset the pressed value to 0
-				}
-			} else {
-				//store key press, if another key was pressed do nothing
-				if(pressed == 0){
-					var id = "#level1-".concat(state - 1);
-					$(id).css({"background-color": "#aa0000"});
-					pressed = state;
-				}
-			}
-		}
-
-		/*if(data.command == "stop"){
-			clearActions();
-			
-		} else {
-			var values = data.input;
-			
-			plotStates.forEach(function each(state, index){
-				var input = parseFloat(values[index]); 	//probably don't need this
-				updatePlot(state, input);
-			});
-
-			//debugging purposes
-			if (debugLog){
-				var messageBox = document.getElementById("messageBox");
-				messageBox.innerHTML += "<div>Channel Values: "+values.toString()+"\n"+"</div>";
-			}
-			
-			var output = data.output;
-		}*/
-	};
-	
-	//function to activate the UI buttons
-	function activateUI(){
-		//start button handler, tell the server to start the test scenario
-		$( "#start" ).click(function() {
-		
-			$.ajax({
-				type: "POST",
-				url: "/realTestActivate",
-				contentType: 'application/json',
-				data: JSON.stringify({"ID": wsID}),
-				success: function(data, status, xhr) {
-					if (ws.onmessage){
-						ws.onmessage = null;
-						$("#start").toggleClass('btn-default');
-						$("#start").html( "Start");
-					} else {
-						ws.onmessage = processCommand;
-						$("#start").toggleClass('btn-default');
-						$("#start").html( "Stop");
-					}
-				},
-				
-				error: function(xhr, status, error) {
-					alert("Error in Real Test! Server response: " + xhr.responseText); //error ___ is still active
-				}
-			});
-		});
-	};
 	
 });
