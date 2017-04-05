@@ -54,6 +54,7 @@ router.post('/serviceStatus', routes.serviceStatus);
 router.post('/initPerformanceTest', routes.initPerformanceTest);
 router.post('/performanceTest', routes.performanceTest);
 
+router.get('/getText', routes.getText);
 
 app.use('/', router);
 

@@ -75,7 +75,7 @@ function makeColumn2(keys){
 	var newCol = "";
 	
 	if (keys.length == 2){
-			newCol = newCol.concat("<div class='level1 col-lg-6'>" + keys[0] + "</div>" + "<div class='level1 col-lg-6'>" + keys[1] + "</div>");
+			newCol = newCol.concat("<div class='level1 col-lg-6' id='level1-" + 0 + "'>" + keys[0] + "</div>" + "<div class='level1 col-lg-6' id='level1-" + 1 + "'>" + keys[1] + "</div>");
 			
 	} else {
 		for (var i2 = 0; i2 < 4; i2++){
@@ -223,12 +223,6 @@ function WSConnect(){
 	}
 };	
 
-//make sure button is pressed up
-if(actionState){
-	$("#" + actionState).toggleClass('btn-default');
-	actionState = null;
-}
-
 var processCommand = function (WSRes){
 	//alert(WSRes);
 	var data = JSON.parse(WSRes.data);
@@ -248,11 +242,14 @@ var processCommand = function (WSRes){
 			if(velocity > MDThreshold){
 				clearText();
 				message = "";
+				ws.send(JSON.stringify({"command":"update", "message": message})); 
 				
 				selectedKeys = keyboard
 				$("#keyboard").html(makeColumn(selectedKeys));
 				selectLevel = 3;
 			} else if (velocity < -MDThreshold){
+				
+				ws.send(JSON.stringify({"command":"send", "message": message})); //send message value then reset it
 				sendText();
 				message = "";
 				
@@ -273,14 +270,36 @@ var processCommand = function (WSRes){
 					message = message.concat(selectedKeys[pressed - 1]);
 					$('#message').html(message);
 					
+					ws.send(JSON.stringify({"command":"update", "message": message})); //send to watch
+					
 					selectedKeys = keyboard
 					$("#keyboard").html(makeColumn(selectedKeys));
 					selectLevel = 3;
 					
 				}else if(selectLevel == 2){
-					selectedKeys = selectKeys(selectedKeys, pressed - 1, selectLevel);
-					selectLevel -= 1;
-					$("#keyboard").html(makeColumn3(selectedKeys));
+					if (selectedKeys.length == 2){
+						
+						if(pressed <= 2){
+							if(pressed == 1){
+								message = message.concat(" ");
+								$('#message').html(message);
+							} else if (pressed == 2){
+								message = message.slice(0, -1);
+							}
+							
+							$('#message').html(message);
+							ws.send(JSON.stringify({"command":"update", "message": message})); //send to watch
+							
+							selectedKeys = keyboard
+							$("#keyboard").html(makeColumn(selectedKeys));
+							selectLevel = 3;
+						}
+					} else {
+						selectedKeys = selectKeys(selectedKeys, pressed - 1, selectLevel);
+						selectLevel -= 1;
+						
+						$("#keyboard").html(makeColumn3(selectedKeys));
+					}
 					
 				}else if (selectLevel == 3) {
 					selectedKeys = selectKeys(selectedKeys, pressed - 1, selectLevel);

@@ -7,9 +7,7 @@ var ACTION_NONE = 0,
 	ACTION_PLAYBACK = 2,
 	ACTION_TEST = 3,
 	ACTION_PERFORMANCE = 4,
-	ACTION_REAL_TEST = 5,
-	ACTION_REAL_TEST_CALIBRATE = 6;
-	ACTION_REAL_TEST_READY = 7;
+	ACTION_REAL_TEST = 5;
 
 var PERFORMANCE_NONE = 0,
 	PERFORMANCE_UI = 1,
@@ -41,8 +39,8 @@ module.exports = function (settings, dataaccess){
 		samplerActionFunction: null,
 		TLCStateChangeID: 0,
 		TLCActionState: -1,
-		watchClientNum: 0,
-		realTestMDListener: null,
+		watchSend: 0,
+		watchMessage: null,
 	};
 	
 	WSConn.UI.on('connection', function chat(ws){
@@ -61,6 +59,15 @@ module.exports = function (settings, dataaccess){
 		
 			ws.on('message', function message(message){
 				
+		
+				if(sas.actionState == ACTION_REAL_TEST){
+					var data = JSON.parse(message);
+					console.log(message);////
+					sas.watchMessage = data.message;
+					if(data.command == "send")
+						sas.watchSend = 1;
+					
+				}
 				console.log("Client message: " + message);
 			});
 			
@@ -207,7 +214,18 @@ module.exports = function (settings, dataaccess){
 		res.send(JSON.stringify({"channels": sas.channelVal, "signalGroupName": sas.signalGroupName}));
 	};
 	
-	
+	module.getText = function(req, res, next){
+		
+		var command = "update";
+		
+		if(sas.watchSend == 1){
+			command = "send";
+		}
+		
+		sas.watchSend = 0;
+		
+		res.send(JSON.stringify({"command": command, "message": sas.watchMessage}));
+	};
 	
 	module.realTest = function (req, res, next){
 		if (sas.UIClients[sas.sysClientID]){
@@ -255,25 +273,30 @@ module.exports = function (settings, dataaccess){
 									//var TLCmsg = JSON.parse(message);
 									
 									//send TLC output to UI
-									sas.UIClients[sas.sysClientID].send(message, function(err){ 
-										if (err){
-											console.log("Fail to send TLC data to UI. Error: " + err);
-										}
-									});
+									if(sas.UIClients[sas.sysClientID]){
+										sas.UIClients[sas.sysClientID].send(message, function(err){ 
+											if (err){
+												console.log("Fail to send TLC data to UI. Error: " + err);
+											}
+										});
+									}
 									
 									//send TLC output to MD
-									WSConn.MD.send(message);
+									if(WSConn.MD)
+										WSConn.MD.send(message);
 									
 								});
 								
 								//redirect MD message to UI
 								WSConn.MD.on('message', function(message) {
 									//var MDmsg = JSON.parse(message);
-									sas.UIClients[sas.sysClientID].send(message, function(err){ 
-										if (err){
-											console.log("Fail to send Motion Detector data to UI. Error: " + err);
-										}
-									});
+									if(sas.UIClients[sas.sysClientID]){
+										sas.UIClients[sas.sysClientID].send(message, function(err){ 
+											if (err){
+												console.log("Fail to send Motion Detector data to UI. Error: " + err);
+											}
+										});
+									}
 								});
 								
 								//redirect UI message to Watch
@@ -322,11 +345,6 @@ module.exports = function (settings, dataaccess){
 			} else if(sas.actionState == ACTION_REAL_TEST){
 				
 				stopSampler();
-				clearInterval(sas.TLCStateChangeID); 
-				
-				sas.TLCActionState = -1;
-				sas.samplerActionFunction = null;
-				sas.actionState = ACTION_NONE;
 				
 				if(WSConn.TLC){
 					WSConn.TLC.close();
@@ -336,6 +354,12 @@ module.exports = function (settings, dataaccess){
 					WSConn.MD.close();
 					WSConn.MD = null;
 				}
+				
+				clearInterval(sas.TLCStateChangeID); 
+				
+				sas.TLCActionState = -1;
+				sas.samplerActionFunction = null;
+				sas.actionState = ACTION_NONE;
 				res.send(JSON.stringify({"result": "Real Test stop success"}));
 			} else {
 				res.status(500).send('Server resource claimed by another action');
@@ -739,7 +763,7 @@ module.exports = function (settings, dataaccess){
 		
 		var data = JSON.parse(message);
 		
-		if(sas.actionState == ACTION_REAL_TEST || sas.actionState == ACTION_REAL_TEST_CALIBRATE){
+		if(sas.actionState == ACTION_REAL_TEST){
 			sas.samplerActionFunction(data); //didnt add test condition
 			
 		} else if(sas.actionState == ACTION_RECORD || sas.actionState == ACTION_TEST){
