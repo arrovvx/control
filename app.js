@@ -47,7 +47,6 @@ router.post('/add', routes.add);
 router.post('/delete', routes.deleteSignalGroup);
 
 router.get('/realTest', routes.realTest);
-router.post('/realTestCalibrate', routes.realTestCalibrate);
 router.post('/realTestActivate', routes.realTestActivate);
 
 router.get('/diagnostic', routes.diagnostic);
@@ -55,6 +54,7 @@ router.post('/serviceStatus', routes.serviceStatus);
 router.post('/initPerformanceTest', routes.initPerformanceTest);
 router.post('/performanceTest', routes.performanceTest);
 
+router.get('/getText', routes.getText);
 
 app.use('/', router);
 

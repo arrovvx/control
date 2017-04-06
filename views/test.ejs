@@ -17,15 +17,15 @@
 				/* centered columns styles */
 		#display {
 			text-align:center;
-			font-size: 80px;
-			margin-top:4em;
-			margin-bottom:0;
-			height: 120px;
+			font-size: 120px;
+			margin-top:2em;
+			margin-bottom:0px;
+			height: 180px;
 		}
 		#keyboard {
 			text-align:center;
 			font-size: 40px;
-			height: 180px;
+			height: 140px;
 			margin-left: 10px;
 			margin-right: 30px;
 		}
@@ -71,7 +71,7 @@
 	
 </head>
 <body>
-		<input type="hidden" id="WSPort" name="WSPort" value="9082">
+		<input type="hidden" id="WSPort" name="WSPort" value="<%= WSPort %>">
 		<div id="mainTable" class="row" style="margin-left:5px;">
 				
 				<div id="display">
@@ -84,11 +84,11 @@
 				
 				</div>
 				<hr>
-				<div id="slider" style="display:none;">
-				ll
+				<!--<div id="slider" style="display:none;">
+				
 				</div>
 				<br>
-				<hr>
+				<hr>-->
 				<div id="controlMenu" class="col-md-12"  style="margin-bottom:2em;">
 					<button id="start" type="button" class="btn btn-default btn-lg col-sm-3 col-md-2 controlButton" style="color: black;">Start</button>
 				</div>

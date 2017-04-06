@@ -1,5 +1,5 @@
 {
-	"_comment": "Please edit this accordingly on different systems 192.168.99.101 dockerhost",
+	"_comment": "Please edit this accordingly on different systems 192.168.99.101 ",
 	
 	"UIDataTransferPeriod": 2,
 	"maxChannelNumber": 8,
@@ -8,15 +8,15 @@
 	
 	"controllerHTTPPort": 9080,
 	"UIWebsocketPort": 9081,
-	"watchWebsocketPort": 9081,
+	"watchWebsocketPort": 9082,
 	"SamplerWebsocketPort": 8889,
 	
-	"TLCIP": "192.168.1.227",
+	"TLCIP": "127.0.0.1",
 	"TLCWebsocketPort": 8890,
 	"TLCStateChangePeriod": 1000,
 	"TLCStateNum": 5,
 	
-	"MDIP": "192.168.1.227",
+	"MDIP": "127.0.0.1",
 	"MDWebsocketPort": 8891,
 	
 	"databaseIP": "192.168.99.100",

@@ -11,7 +11,11 @@ var keyboard = [
 '"',"'",'[',']','(',')','space','delete'];
 var selectedKeys;
 var pressed = 0;
-var MDThreshold = 10;
+var MDThreshold = 9;
+var clearFlag = 0;
+
+var ws = null;
+var wsID = null;
 
 function mini(x, y){
 	if (x > y)
@@ -72,7 +76,7 @@ function makeColumn2(keys){
 	var newCol = "";
 	
 	if (keys.length == 2){
-			newCol = newCol.concat("<div class='level1 col-lg-6'>" + keys[0] + "</div>" + "<div class='level1 col-lg-6'>" + keys[1] + "</div>");
+			newCol = newCol.concat("<div class='level1 col-lg-6' id='level1-" + 0 + "'>" + keys[0] + "</div>" + "<div class='level1 col-lg-6' id='level1-" + 1 + "'>" + keys[1] + "</div>");
 			
 	} else {
 		for (var i2 = 0; i2 < 4; i2++){
@@ -184,100 +188,125 @@ function sendText(){
 						});
 };
 
-$(document).ready(function(){
+//function called to connect to the websocket on the server end
+function WSConnect(){
+	var serverURL = window.location.hostname;
+	var serverPort = window.location.port;
+	var wsPort = $("#WSPort").val();	
 
-	var ws = null;
-	var wsID = null;
-	
-	selectedKeys = keyboard
-	$("#keyboard").html(makeColumn(selectedKeys));
-	$("#slider").html(makeSliderCol(selectKeys(selectedKeys, 0, selectLevel)));
-	console.log("hoho");
-	//initialize the UI variables and interface
-	$("#start").toggleClass('btn-default');
-	WSConnect();
-	activateUI();	
+	//check if websocket is supported
+	if ("WebSocket" in window) {
+		
+		//create connection
+		ws = new WebSocket("ws://" + serverURL + ":" + wsPort + "/");
 
-	curserTimeID = setInterval('cursorAnimation()', 600);
-	
-	//function called to connect to the websocket on the server end
-	function WSConnect(){
-		var serverURL = window.location.hostname;
-		var serverPort = window.location.port;
-		var wsPort = $("#WSPort").val();	
+		//this function be deleted
+		ws.onopen = function(){
+			ws.send("Notice me senpai");
+		};
+		
+		ws.onmessage = function (serverRes){
+			var data = JSON.parse(serverRes.data);
+			if (wsID == null) wsID = data.ID;
+			ws.onmessage = null;
+		};			
 
-		//check if websocket is supported
-		if ("WebSocket" in window) {
+		ws.onclose = function() { 
+		
+			ws = null;					
+			console.log("Connection is closed...");	
+			alert("closed");
+			window.location.href = "/";
+		};
+	} else {
+		alert("WebSocket NOT supported");
+		window.location.href = "/";
+	}
+};	
+
+var processCommand = function (WSRes){
+	//alert(WSRes);
+	var data = JSON.parse(WSRes.data);
+	console.log(WSRes.data);
+	if(data.command && data.command == "stop"){
+		message = "";
+		selectedKeys = keyboard;
+		$("#keyboard").html(makeColumn(selectedKeys));
+		selectLevel = 3;
+		$("#start").toggleClass('btn-default');
+		ws.onmessage = null;
+		$("#start").html( "Start");
 			
-			//create connection
-			ws = new WebSocket("ws://" + serverURL + ":" + 9081 + "/");
-
-			//this function be deleted
-			ws.onopen = function(){
-				$("#start").toggleClass('btn-default');
-				ws.send("Notice me senpai");
-			};
-			
-			ws.onmessage = function (serverRes){
-				var data = JSON.parse(serverRes.data);
-				if (wsID == null) wsID = data.ID;
-				ws.onmessage = null;
-			};			
-
-			ws.onclose = function() { 
-			
-				ws = null;					
-				console.log("Connection is closed...");	
-				alert("closed");
-				window.location.href = "/";
-			};
-		} else {
-			alert("WebSocket NOT supported");
-		}
-	};	
-	
-	var processCommand = function (WSRes){
-		//alert(WSRes);
-		var data = JSON.parse(WSRes.data);
-		console.log("received" + JSON.stringify(data));
-		if (data.name == "MDOutput"){
-			velocity = data.output;
-			if(pressed == 0){
-				if(velocity > MDThreshold){
-					clearText();
-					message = "";
-				} else if (velocity < -MDThreshold){
-					sendText();
-					message = "";
-				} else {
-					//this is the slider
-				}
+	} else if (data.name == "MDOutput"){
+		velocity = data.output;
+		if(pressed == 0){
+			if(velocity > MDThreshold){
+				clearText();
+				message = "";
+				ws.send(JSON.stringify({"command":"update", "message": message})); 
+				
+				selectedKeys = keyboard
+				$("#keyboard").html(makeColumn(selectedKeys));
+				selectLevel = 3;
+			} else if (velocity < -MDThreshold){
+				
+				ws.send(JSON.stringify({"command":"send", "message": message})); //send message value then reset it
+				sendText();
+				message = "";
+				
+				selectedKeys = keyboard
+				$("#keyboard").html(makeColumn(selectedKeys));
+				selectLevel = 3;
 			}
-		} else if (data.name == "TLCOutput") {
-			state = data.output;
-			
-			if (state == 0){
+		}
+	} else if (data.name == "TLCOutput") {
+		state = data.output;
+		if (state == 0){
+			if (clearFlag == 1){
+				selectedKeys = keyboard
+				$("#keyboard").html(makeColumn(selectedKeys));
+				selectLevel = 3;
+				clearFlag = 0;
+			} else {
 				//clear output and process key pressed, anime, if nothing press do nothing
 				if(pressed != 0){
 					var id = "#level1-".concat(pressed - 1);
 					$(id).css({"background-color": "#FFFFFF"});
 					
-					
-					if(selectLevel == 0){
-						
-					} else if(selectLevel == 1){
-						
+					if(selectLevel == 1){
 						message = message.concat(selectedKeys[pressed - 1]);
 						$('#message').html(message);
-						//$("#keyboard").html(makeColumn2(selectedKeys));
-						selectedKeys = keyboard;
+						
+						ws.send(JSON.stringify({"command":"update", "message": message})); //send to watch
+						
+						selectedKeys = keyboard
 						$("#keyboard").html(makeColumn(selectedKeys));
 						selectLevel = 3;
 						
 					}else if(selectLevel == 2){
-						selectedKeys = selectKeys(selectedKeys, pressed - 1, selectLevel);
-						selectLevel -= 1;
-						$("#keyboard").html(makeColumn3(selectedKeys));
+						if (selectedKeys.length == 2){
+							
+							if(pressed <= 2){
+								if(pressed == 1){
+									message = message.concat(" ");
+									$('#message').html(message);
+								} else if (pressed == 2){
+									message = message.slice(0, -1);
+								}
+								
+								$('#message').html(message);
+								ws.send(JSON.stringify({"command":"update", "message": message})); //send to watch
+								
+								selectedKeys = keyboard
+								$("#keyboard").html(makeColumn(selectedKeys));
+								selectLevel = 3;
+							}
+						} else {
+							selectedKeys = selectKeys(selectedKeys, pressed - 1, selectLevel);
+							selectLevel -= 1;
+							
+							$("#keyboard").html(makeColumn3(selectedKeys));
+						}
 						
 					}else if (selectLevel == 3) {
 						selectedKeys = selectKeys(selectedKeys, pressed - 1, selectLevel);
@@ -286,66 +315,77 @@ $(document).ready(function(){
 						
 					}
 					
-					pressed = state; //simply reset the pressed value to 0
+					pressed = 0; //simply reset the pressed value to 0
 				}
-			} else {
-				//store key press, if another key was pressed do nothing
-				if(pressed == 0){
+			}
+			
+		} else {
+			if(pressed == 0){
+				//clear signal
+				if (state == 5){ 
+					for(var i = 0; i < 4; i++){
+						var id = "#level1-".concat(i);
+						$(id).css({"background-color": "#d9534f"});
+						clearFlag = 1;
+					}
+				} else {
+					//store key press, if another key was pressed do nothing
 					var id = "#level1-".concat(state - 1);
-					$(id).css({"background-color": "#aa0000"});
+					$(id).css({"background-color": "#337ab7"});
 					pressed = state;
 				}
 			}
 		}
+	}
+};
 
-		/*if(data.command == "stop"){
-			clearActions();
-			
-		} else {
-			var values = data.input;
-			
-			plotStates.forEach(function each(state, index){
-				var input = parseFloat(values[index]); 	//probably don't need this
-				updatePlot(state, input);
-			});
-
-			//debugging purposes
-			if (debugLog){
-				var messageBox = document.getElementById("messageBox");
-				messageBox.innerHTML += "<div>Channel Values: "+values.toString()+"\n"+"</div>";
-			}
-			
-			var output = data.output;
-		}*/
-	};
-	
-	//function to activate the UI buttons
-	function activateUI(){
-		//start button handler, tell the server to start the test scenario
-		$( "#start" ).click(function() {
+//function to activate the UI buttons
+function activateUI(){
+	//start button handler, tell the server to start the test scenario
+	$( "#start" ).click(function() {
+		selectedKeys = keyboard;
+		$("#keyboard").html(makeColumn(selectedKeys));
+		selectLevel = 3;
 		
-			$.ajax({
-				type: "POST",
-				url: "/realTestActivate",
-				contentType: 'application/json',
-				data: JSON.stringify({"ID": wsID}),
-				success: function(data, status, xhr) {
-					if (ws.onmessage){
-						ws.onmessage = null;
-						$("#start").toggleClass('btn-default');
-						$("#start").html( "Start");
-					} else {
-						ws.onmessage = processCommand;
-						$("#start").toggleClass('btn-default');
-						$("#start").html( "Stop");
-					}
-				},
-				
-				error: function(xhr, status, error) {
-					alert("Error in Real Test! Server response: " + xhr.responseText); //error ___ is still active
+		$.ajax({
+			type: "POST",
+			url: "/realTestActivate",
+			contentType: 'application/json',
+			data: JSON.stringify({"ID": wsID}),
+			success: function(data, status, xhr) {
+				if (ws.onmessage){
+					ws.onmessage = null;
+					$("#start").toggleClass('btn-default');
+					$("#start").html( "Start");
+				} else {
+					ws.onmessage = processCommand;
+					$("#start").toggleClass('btn-default');
+					$("#start").html( "Stop");
 				}
-			});
+			},
+			
+			error: function(xhr, status, error) {
+				
+				alert("Error in Real Test! Server response: " + xhr.responseText); //error ___ is still active
+				window.location.href = "/";
+			}
 		});
-	};
+	});
+};
+
+$(document).ready(function(){
+
+	
+	
+	selectedKeys = keyboard
+	$("#keyboard").html(makeColumn(selectedKeys));
+	$("#slider").html(makeSliderCol(selectKeys(selectedKeys, 0, selectLevel)));
+	
+	WSConnect();
+	activateUI();	
+
+	curserTimeID = setInterval('cursorAnimation()', 600);	
+	
+	
 	
 });
