@@ -100,7 +100,7 @@ $(document).ready(function(){
 							
 							ws.onmessage = function (data){
 								var time2 = window.performance.now();
-								var lag = Math.abs(time2 + time - jQuery.parseJSON(data.data).timestamp);
+								var lag = Math.abs(time2 + time - jQuery.parseJSON(data.data).timestamp) % 10;
 								$("#result").html( "<div>Trip " + counter + ": " + lag + "ms</div>");
 								if (counter >= 0)
 									sum = sum + lag;

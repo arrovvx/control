@@ -217,6 +217,11 @@ module.exports = function (settings, dataaccess){
 	module.getText = function(req, res, next){
 		
 		var command = "update";
+		var msg = sas.watchMessage;
+		
+		if (sas.actionState != ACTION_REAL_TEST) {
+			msg = "";
+		}
 		
 		if(sas.watchSend == 1){
 			command = "send";
@@ -224,7 +229,7 @@ module.exports = function (settings, dataaccess){
 		
 		sas.watchSend = 0;
 		
-		res.send(JSON.stringify({"command": command, "message": sas.watchMessage}));
+		res.send(JSON.stringify({"command": command, "message": msg}));
 	};
 	
 	module.realTest = function (req, res, next){
